@@ -209,7 +209,7 @@
     if (!menuEl) return;
     menuEl.innerHTML = `
     <div class="dch-mh">
-      <div class="dch-mh-title">Deepseek Harness EAC <span style="font-weight:400;color:var(--dsw-alias-label-tertiary)">\u5C01\u88C5 v${esc(state.appVersion)}</span></div>
+      <div class="dch-mh-title">DSHEAC AIO <span style="font-weight:400;color:var(--dsw-alias-label-tertiary)">All-in-One ${esc(state.appVersion)}</span></div>
       <div class="dch-mh-sub"><span>agent v${esc(state.agentVersion)}</span><span>${esc(state.agentSource)}</span></div>
     </div>
     <button class="dch-item" data-act="toggle-shortcut-policy"><span>\u684C\u9762\u5FEB\u6377\u65B9\u5F0F\u81EA\u52A8\u7EF4\u62A4</span>${state.shortcutPolicy !== "never" ? '<span class="dch-check">\u2713</span>' : ""}</button>
@@ -286,7 +286,7 @@
     bar.innerHTML = `
     <div class="dch-left" data-tauri-drag-region="true">
       <img class="dch-icon" alt="" draggable="false" data-tauri-drag-region="true" />
-      <span class="dch-title" data-tauri-drag-region="true">Deepseek Harness EAC</span>
+      <span class="dch-title" data-tauri-drag-region="true">DSHEAC AIO</span>
       <span class="dch-badge" hidden data-tauri-drag-region="true"></span>
     </div>
     <div class="dch-right">
