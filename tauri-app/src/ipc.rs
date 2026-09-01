@@ -310,7 +310,7 @@ fn show_about(app: AppHandle, state: Arc<AppState>) {
     let gitee = urls["gitee"].as_str().unwrap_or("").to_string();
     let (agent_version, agent_source) = agent_version_info(&state);
     let detail = format!(
-        "DSHEAC AIO（All-in-One）v1\n兼容 DeepSeek Harness\n\nagent 版本：{}（{}）\n数据目录：{}\nDSH_HOME：{}\n\n上游参考：\n  GitHub: {}\n  Gitee:  {}\n\n本发行版为非官方社区重构版。", 
+        "DSHEAC AIO（All-in-One）v1\n兼容 DeepSeek Harness\n\nagent 版本：{}（{}）\n数据目录：{}\nDSH_HOME：{}\n\n上游参考：\n  GitHub: {}\n  Gitee:  {}\n\n本发行版为非官方社区重构版。",
         agent_version,
         agent_source,
         state.paths.user_data.display(),
