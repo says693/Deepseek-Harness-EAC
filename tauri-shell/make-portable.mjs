@@ -32,10 +32,12 @@ execFileSync('powershell.exe', [
   '-NoProfile',
   '-NonInteractive',
   '-Command',
-  "$ProgressPreference='SilentlyContinue'; Compress-Archive -LiteralPath (Get-ChildItem -LiteralPath $args[0] | ForEach-Object FullName) -DestinationPath $args[1] -Force",
-  staging,
-  zip,
-], { windowsHide: true, stdio: 'inherit' });
+  "$ProgressPreference='SilentlyContinue'; $items = Get-ChildItem -LiteralPath $env:P_STAGE | ForEach-Object FullName; Compress-Archive -LiteralPath $items -DestinationPath $env:P_ZIP -Force",
+], {
+  env: { ...process.env, P_STAGE: staging, P_ZIP: zip },
+  windowsHide: true,
+  stdio: 'inherit',
+});
 
 const hash = createHash('sha256').update(readFileSync(zip)).digest('hex');
 writeFileSync(path.join(outDir, 'SHA256SUMS.txt'), `${hash}  ${path.basename(zip)}\n`, 'ascii');

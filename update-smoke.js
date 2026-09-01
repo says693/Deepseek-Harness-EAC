@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 
 const repo = __dirname;
 const packageJson = JSON.parse(fs.readFileSync(path.join(repo, 'package.json'), 'utf8'));
@@ -18,7 +19,7 @@ assert.ok(!ipc.includes('client_update'), 'AIO native IPC must not expose a clie
 assert.ok(!shell.includes('clientUpdater'), 'AIO web bridge must not expose a client updater');
 
 (async () => {
-  const updater = await import(path.join(repo, 'sidecar', 'dist', 'lib', 'plugin-updater.js'));
+  const updater = await import(pathToFileURL(path.join(repo, 'sidecar', 'dist', 'lib', 'plugin-updater.js')).href);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-aio-update-'));
   try {
     const ctx = {
