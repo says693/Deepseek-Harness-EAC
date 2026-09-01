@@ -126,12 +126,12 @@ test('壳层：被移除的模块/脚本/调试文件不存在', () => {
   }
 });
 
-test('壳层：不再分发旧 assets/skills；AIO 技能只来自脱敏 profile seed', () => {
+test('壳层：AIO 技能由脱敏 profile seed 清单和外部离线资产声明', () => {
   assert.ok(!existsSync(join(root, 'assets', 'skills')), '旧 assets/skills 不应残留');
-  assert.ok(
-    existsSync(join(root, 'distribution', 'profile-seed', 'profiles', 'web-desktop', 'node_modules', 'dsh-usage-skill', 'package.json')),
-    'AIO profile seed 应包含声明的 dsh-usage-skill',
-  );
+  const seedPackage = JSON.parse(read('distribution/profile-seed/profiles/web-desktop/package.json'));
+  assert.ok(seedPackage.dependencies?.['dsh-usage-skill'], 'profile seed 清单应声明 dsh-usage-skill');
+  const stage = read('tauri-app/scripts/stage.ts');
+  assert.match(stage, /DSH_PROFILE_SEED_DIR/, 'staging 应支持注入审核后的离线 seed');
 });
 
 test('测试：已移除功能的测试文件不存在', () => {
