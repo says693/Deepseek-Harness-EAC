@@ -2,10 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const mod = await import(pathToFileURL(join('assets', 'plugins', 'dsh-webui-market', 'lib', 'artifact-keep.mjs')).href);
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const mod = await import(pathToFileURL(join(root, 'assets', 'plugins', 'dsh-webui-market', 'lib', 'artifact-keep.mjs')).href);
 const { snapshotArtifacts, restoreArtifacts, listThirdPartyPackages } = mod;
 
 function makeProfile(root) {

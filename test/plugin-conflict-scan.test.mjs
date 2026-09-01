@@ -2,15 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 // 防呆（v4.2，用户反馈问题 3）：两个插件互相影响（同名 patch 行 /
 // 同一 settings 命名空间 / 核心依赖版本错位）装完才发现。本测试覆盖
 // 安装前的轻量冲突预检：refuse（会直接拒绝安装）/ warn（弹窗提醒），
 // 只读不写，skipCheck 仍可绕过 refuse（风险自负）。
 
-const mod = await import(pathToFileURL(join('assets', 'plugins', 'dsh-webui-market', 'lib', 'plugin-conflict-scan.mjs')).href);
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const mod = await import(pathToFileURL(join(root, 'assets', 'plugins', 'dsh-webui-market', 'lib', 'plugin-conflict-scan.mjs')).href);
 const { parsePatchRows, scanCandidate, collectProfileState } = mod;
 
 const EMPTY_PROFILE = { builtinNames: [], bundles: [], dependencies: {}, patchRows: [], installed: [] };
