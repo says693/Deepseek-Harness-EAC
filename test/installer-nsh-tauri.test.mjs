@@ -11,7 +11,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 // 平行；断言对象是 Tauri 打包实际加载的钩子文件。
 //
 // 锁定的关键不变量：
-//  1. 进程清理覆盖本代（安装名+调试名）与三代旧版 Electron exe，且带 /F /T
+//  1. 进程清理只覆盖 AIO 本代，绝不终止原 v4Lite 或旧版 EAC
 //  2. 全程无 cmd 管道 / find / nsProcess（v4.2 安装界面挂死教训）
 //  3. 等待循环保留有界语义（20 × 500ms，超时放行）
 //  4. 旧代遗留快捷方式清理
@@ -23,15 +23,18 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const nsh = fs.readFileSync(join(root, 'tauri-app', 'nsis', 'installer-hooks.nsh'), 'utf8');
 const lines = nsh.split(/\r?\n/);
 
-const CURRENT = ['Deepseek Harness EAC v4Lite.exe', 'dsh-desktop-lite.exe'];
-const LEGACY = ['Deepseek Harness EAC.exe', 'Deepseek Harness EAC v2.0.exe', 'Deepseek Harness EAC v1.0.exe', 'DSH Desktop.exe'];
+const CURRENT = ['DSHEAC AIO.exe'];
+const OTHER_PRODUCTS = ['Deepseek Harness EAC v4Lite.exe', 'Deepseek Harness EAC.exe', 'Deepseek Harness EAC v2.0.exe', 'Deepseek Harness EAC v1.0.exe', 'DSH Desktop.exe'];
 
-test('PREINSTALL：taskkill 覆盖本代与全部旧代 exe（/F /T）', () => {
+test('PREINSTALL：只终止 AIO 本代进程（/F /T），保持其他产品运行', () => {
   const start = lines.findIndex((l) => l.includes('!macro _dshKillAll'));
   const end = lines.findIndex((l, i) => i > start && l.trim() === '!macroend');
   const block = lines.slice(start, end + 1).join('\n');
-  for (const app of [...CURRENT, ...LEGACY]) {
+  for (const app of CURRENT) {
     assert.ok(block.includes(`taskkill /F /T /IM "${app}"`), `应杀 ${app}`);
+  }
+  for (const app of OTHER_PRODUCTS) {
+    assert.ok(!block.includes(`/IM "${app}"`), `不得终止其他产品 ${app}`);
   }
 });
 
@@ -45,29 +48,39 @@ test('钩子全程无 cmd 管道 / find / nsProcess', () => {
   }
 });
 
-test('等待循环保留有界语义（20 轮 × Sleep 500，超时放行）', () => {
+test('等待循环保留有界语义（20 轮 × Sleep 500，超时中止）', () => {
   assert.ok(/\$1\s*>\s*20/.test(nsh), '应有 $1 > 20 的轮数上限');
   assert.ok(/Sleep\s+500/.test(nsh), '应有 Sleep 500 节流');
-  assert.ok(/did not exit; continuing anyway/.test(nsh), '超时应放行继续安装');
+  assert.match(nsh, /Abort/, '同产品进程无法退出时必须中止，不能继续覆盖');
   assert.ok(nsh.split('\n').filter((l) => l.includes('ExecToStack')).length >= 1, '应用 ExecToStack 无管道探测');
 });
 
-test('PREINSTALL：清理旧代遗留快捷方式', () => {
-  assert.ok(nsh.includes('Delete "$DESKTOP\\Deepseek Harness EAC v2.0.lnk"'));
-  assert.ok(nsh.includes('Delete "$SMPROGRAMS\\DSH Desktop.lnk"'));
+test('PREINSTALL：拒绝超过 120 字符的安装根，避免 NSIS 静默漏文件', () => {
+  assert.match(nsh, /StrLen\s+\$0\s+"\$INSTDIR"/);
+  assert.match(nsh, /\$0\s*>\s*120/);
+  assert.match(nsh, /安装路径过长/);
+  assert.match(nsh, /Abort/);
+});
+
+test('PREINSTALL：不清理其他产品快捷方式', () => {
+  assert.ok(!nsh.includes('Deepseek Harness EAC v2.0.lnk'));
+  assert.ok(!nsh.includes('DSH Desktop.lnk'));
 });
 
 test('卸载询问：默认保留（DEFBUTTON2），只清 Tauri 自有数据', () => {
   assert.match(nsh, /MB_DEFBUTTON2/, '默认按钮必须是「否」（保留）');
-  assert.match(nsh, /com\.deepseek\.dsh\.desktop\.lite/, '应清理 Tauri userData');
-  assert.match(nsh, /\.dsh-v4lite/, '应清理 v4Lite 隔离 DSH_HOME');
+  assert.match(nsh, /com\.deepseek\.dsh\.desktop\.aio/, '应只清理 AIO 的 Tauri userData');
+  assert.ok(!nsh.includes('.dsh-v4lite'), '不得清理原 v4Lite DSH_HOME');
+  assert.match(nsh, /IfSilent\s+dshUnKeep/, '静默卸载必须显式默认保留数据');
   assert.ok(!/APPDATA\\\\?Deepseek Harness EAC"/.test(nsh), '绝不动 Electron 版 %APPDATA% 数据');
   const wipeBlock = lines.findIndex((l) => l.includes('dshUnWipe:'));
   assert.ok(wipeBlock > 0, '应有卸载清理分支');
 });
 
-test('绝不 RMDir $INSTDIR（Tauri 自带旧版卸载负责文件树）', () => {
-  assert.ok(!/RMDir\s+\/r\s+"\$INSTDIR"/.test(nsh), '钩子不得自行清空安装目录');
+test('卸载长路径安全清理仅限 AIO resources，不接管整个 $INSTDIR', () => {
+  assert.ok(nsh.includes('!insertmacro dshWipeDir "$INSTDIR\\resources"'));
+  assert.ok(!/RMDir\s+\/r\s+"\$INSTDIR"\s*$/.test(nsh), '钩子不得直接清空整个安装根');
+  assert.match(nsh, /无法清理 \$\{target\}/, '清理失败必须显式中止');
 });
 
 test('长路径兜底：robocopy 镜像存在', () => {
