@@ -20,7 +20,9 @@ impl Logger {
             .append(true)
             .open(logs_dir.join("desktop.log"))
             .ok();
-        Logger { file: Mutex::new(file) }
+        Logger {
+            file: Mutex::new(file),
+        }
     }
 
     pub fn log(&self, tag: &str, msg: &str) {
@@ -39,7 +41,9 @@ impl Logger {
 /// 本地时间 + 时区偏移，例如 `2026-08-21 12:34:56.789 UTC+08:00`。
 /// 不引 chrono，用偏移量手算（只用于日志展示）。
 pub fn now_local_string() -> String {
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
     let total_secs = now.as_secs() as i64;
     let millis = now.subsec_millis();
     let off_secs = local_utc_offset_secs();
@@ -49,7 +53,16 @@ pub fn now_local_string() -> String {
     let abs = off_secs.abs();
     format!(
         "{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:03} UTC{}{:02}:{:02}",
-        y, mo, d, h, mi, s, millis, sign, abs / 3600, (abs % 3600) / 60
+        y,
+        mo,
+        d,
+        h,
+        mi,
+        s,
+        millis,
+        sign,
+        abs / 3600,
+        (abs % 3600) / 60
     )
 }
 
