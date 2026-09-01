@@ -76,7 +76,7 @@ export function createDesktopCore(ctx: DesktopCoreCtx) {
     appRoot, // 应用 JS 根（assets/node_modules 所在）
     userDataDir, // %APPDATA%/<identifier>
     logsDir, // userData/logs
-    dshHome, // DSH_HOME（~/.dsh-v4lite）
+    dshHome, // AIO 独立 DSH_HOME（默认 Tauri app data；可显式覆盖）
     nodeExe, // () => 内置 node.exe 路径
     npmCli, // () => 内置 npm-cli.js 路径
     log = (() => {}) as (tag: string, msg: string) => void,

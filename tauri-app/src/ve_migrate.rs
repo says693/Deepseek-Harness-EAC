@@ -1,7 +1,6 @@
-//! V-E localStorage 跨壳迁移：Electron 版退出时把 Web UI origin 的
-//! localStorage 全量导出到 `<Electron userData>/dsh-localstorage-export.json`；
-//! Tauri 版首启读到后经 initialization_script 在目标 origin 页面里写回
-//! localStorage（跨 origin 显式拷贝）。写 stamp 幂等：只迁一次。
+//! 可选 localStorage 跨壳迁移。AIO 默认完全隔离，不读取其他版本数据；
+//! 只有用户显式设置 `DSH_AIO_IMPORT_LEGACY=1` 时，才读取旧 Electron 导出
+//! 并经 initialization_script 写入 AIO Web origin。写 stamp 幂等：只迁一次。
 //!
 //! 导出文件查找顺序：
 //!   1. `%APPDATA%\Deepseek Harness EAC`（Electron 版真实 userData）
@@ -64,6 +63,9 @@ pub fn migration_script_for(export_file: &Path, stamp_file: &Path) -> Option<Str
 
 /// 按查找顺序定位导出文件并生成迁移脚本；结果记日志。
 pub fn load_migration_script(paths: &Paths, log: &crate::logging::Logger) -> Option<String> {
+    if std::env::var("DSH_AIO_IMPORT_LEGACY").as_deref() != Ok("1") {
+        return None;
+    }
     let stamp = paths.user_data.join(STAMP_FILE);
     let mut candidates: Vec<PathBuf> = Vec::new();
     if let Some(eu) = electron_userdata() {
@@ -113,6 +115,21 @@ mod tests {
             "二次调用应幂等跳过"
         );
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn legacy_import_is_opt_in() {
+        let previous = std::env::var("DSH_AIO_IMPORT_LEGACY").ok();
+        std::env::remove_var("DSH_AIO_IMPORT_LEGACY");
+        let d = tmpdir("opt-in");
+        let paths = Paths::new(false, None, d.clone(), "1.0.0".into());
+        let log = crate::logging::Logger::open(&d.join("logs"));
+        assert!(load_migration_script(&paths, &log).is_none());
+        match previous {
+            Some(value) => std::env::set_var("DSH_AIO_IMPORT_LEGACY", value),
+            None => std::env::remove_var("DSH_AIO_IMPORT_LEGACY"),
+        }
+        let _ = std::fs::remove_dir_all(d);
     }
 
     #[test]
