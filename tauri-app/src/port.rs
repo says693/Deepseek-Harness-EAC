@@ -40,7 +40,10 @@ pub fn extract_port(url: &str) -> u16 {
     // IPv6 字面量 [::1]:80
     if let Some(close) = authority.rfind(']') {
         let after = &authority[close + 1..];
-        return after.strip_prefix(':').and_then(|p| p.parse().ok()).unwrap_or(default_port);
+        return after
+            .strip_prefix(':')
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(default_port);
     }
     match authority.rsplit_once(':') {
         Some((_, p)) => p.parse().unwrap_or(default_port),
