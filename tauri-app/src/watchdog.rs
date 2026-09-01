@@ -30,7 +30,11 @@ fn arg_of(name: &str) -> Option<String> {
 fn wlog(log_file: &PathBuf, msg: &str) {
     use std::io::Write;
     let line = format!("[{}] {}\n", crate::logging::now_local_string(), msg);
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(log_file) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_file)
+    {
         let _ = f.write_all(line.as_bytes());
     }
 }
@@ -55,7 +59,10 @@ fn watchdog_loop(args: WatchArgs) -> ! {
     let mut window_start = Instant::now();
     let mut last_launch: Option<Instant> = None;
 
-    wlog(&args.log, &format!("watchdog: started watching={} exe={}", args.pid, args.exe));
+    wlog(
+        &args.log,
+        &format!("watchdog: started watching={} exe={}", args.pid, args.exe),
+    );
     loop {
         std::thread::sleep(Duration::from_millis(POLL_MS));
         // 干净退出标记检查提到最前，不依赖 alive 探测：主壳进程对象在
@@ -80,10 +87,22 @@ fn watchdog_loop(args: WatchArgs) -> ! {
             .unwrap_or(Value::Null);
         let newer_pid = state.get("pid").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
         if newer_pid != 0 && newer_pid != args.pid && crate::procwin::alive(newer_pid) {
-            wlog(&args.log, &format!("watchdog: newer instance pid={} is running, exiting", newer_pid));
+            wlog(
+                &args.log,
+                &format!(
+                    "watchdog: newer instance pid={} is running, exiting",
+                    newer_pid
+                ),
+            );
             std::process::exit(0);
         }
-        wlog(&args.log, &format!("watchdog: watched pid={} is gone without clean-exit marker", args.pid));
+        wlog(
+            &args.log,
+            &format!(
+                "watchdog: watched pid={} is gone without clean-exit marker",
+                args.pid
+            ),
+        );
         // 拉起护栏：10 分钟窗口内最多 5 次；每次拉起间隔 ≥15s。
         if let Some(t) = last_launch {
             if t.elapsed() < Duration::from_millis(GRACE_MS) {
@@ -95,17 +114,34 @@ fn watchdog_loop(args: WatchArgs) -> ! {
             restart_count = 0;
         }
         if restart_count >= MAX_RESTARTS {
-            wlog(&args.log, &format!("watchdog: too many restarts ({}/{}), giving up", restart_count, MAX_RESTARTS));
+            wlog(
+                &args.log,
+                &format!(
+                    "watchdog: too many restarts ({}/{}), giving up",
+                    restart_count, MAX_RESTARTS
+                ),
+            );
             std::process::exit(0);
         }
         if args.exe.is_empty() || !std::path::Path::new(&args.exe).exists() {
-            wlog(&args.log, &format!("watchdog: app exe missing: {}", args.exe));
+            wlog(
+                &args.log,
+                &format!("watchdog: app exe missing: {}", args.exe),
+            );
             std::process::exit(0);
         }
         restart_count += 1;
         last_launch = Some(Instant::now());
-        wlog(&args.log, &format!("watchdog: relaunching app (attempt {}/{})", restart_count, MAX_RESTARTS));
-        let cwd = std::path::Path::new(&args.exe).parent().map(|p| p.to_path_buf());
+        wlog(
+            &args.log,
+            &format!(
+                "watchdog: relaunching app (attempt {}/{})",
+                restart_count, MAX_RESTARTS
+            ),
+        );
+        let cwd = std::path::Path::new(&args.exe)
+            .parent()
+            .map(|p| p.to_path_buf());
         let _ = crate::procwin::spawn_detached(&args.exe, &[], cwd.as_deref());
     }
 }
@@ -114,14 +150,22 @@ fn watchdog_loop(args: WatchArgs) -> ! {
 // run-state.json 维护（主进程侧）
 // ---------------------------------------------------------------------------
 
-pub fn write_run_state(state_file: &std::path::Path, pid: u32, version: &str, extra: Option<Value>) {
+pub fn write_run_state(
+    state_file: &std::path::Path,
+    pid: u32,
+    version: &str,
+    extra: Option<Value>,
+) {
     let mut doc = serde_json::json!({
         "pid": pid,
         "cleanExit": false,
         "startedAt": iso_now(),
         "version": version,
     });
-    if let (Some(obj), Some(extra)) = (doc.as_object_mut(), extra.and_then(|e| e.as_object().cloned())) {
+    if let (Some(obj), Some(extra)) = (
+        doc.as_object_mut(),
+        extra.and_then(|e| e.as_object().cloned()),
+    ) {
         for (k, v) in extra {
             obj.insert(k, v);
         }
@@ -146,7 +190,10 @@ pub fn detect_unclean_previous_run(state_file: &std::path::Path, own_pid: u32) -
     let prev: Value = std::fs::read_to_string(state_file)
         .ok()
         .and_then(|t| serde_json::from_str(&t).ok())?;
-    let clean = prev.get("cleanExit").and_then(|v| v.as_bool()).unwrap_or(true);
+    let clean = prev
+        .get("cleanExit")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
     let pid = prev.get("pid").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
     if !clean && pid != 0 && pid != own_pid {
         Some(prev)
@@ -164,7 +211,11 @@ pub fn iso_now() -> String {
     let millis = now.subsec_millis();
     let days = secs.div_euclid(86400);
     let rem = secs.rem_euclid(86400);
-    let (h, mi, s) = ((rem / 3600) as u32, ((rem % 3600) / 60) as u32, (rem % 60) as u32);
+    let (h, mi, s) = (
+        (rem / 3600) as u32,
+        ((rem % 3600) / 60) as u32,
+        (rem % 60) as u32,
+    );
     // civil_from_days
     let z = days + 719468;
     let era = z.div_euclid(146097);
@@ -176,5 +227,8 @@ pub fn iso_now() -> String {
     let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
     let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
     let y = if m <= 2 { y + 1 } else { y };
-    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z", y, m, d, h, mi, s, millis)
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z",
+        y, m, d, h, mi, s, millis
+    )
 }
