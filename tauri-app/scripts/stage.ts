@@ -26,7 +26,9 @@ const REPO_ROOT = path.resolve(TAURI_APP, '..');
 const RESOURCES = path.join(TAURI_APP, 'resources');
 const APP = path.join(RESOURCES, 'app');
 const NM_SRC = path.join(REPO_ROOT, 'node_modules');
-const PROFILE_SEED = path.join(REPO_ROOT, 'distribution', 'profile-seed');
+const PROFILE_SEED = process.env.DSH_PROFILE_SEED_DIR
+  ? path.resolve(process.env.DSH_PROFILE_SEED_DIR)
+  : path.join(REPO_ROOT, 'distribution', 'profile-seed');
 
 // sidecar 运行时 = TypeScript 编译产物（sidecar/dist 整树，含 shell-host 与
 // 全部 lib 模块）。构建顺序：npm run sidecar:build 先行，再跑本脚本。
@@ -303,7 +305,7 @@ function main() {
   console.log('[stage] app: package.json + sidecar/dist 编译产物 + scripts + assets 完成');
 
   if (!fs.existsSync(path.join(PROFILE_SEED, 'profiles', 'web-desktop', 'node_modules'))) {
-    console.error('[stage] 缺少 distribution/profile-seed 中的当前插件与技能快照');
+    console.error('[stage] 缺少离线 profile seed 的 node_modules；请准备审核后的 seed 并设置 DSH_PROFILE_SEED_DIR');
     process.exit(1);
   }
   copyTree(PROFILE_SEED, path.join(RESOURCES, 'profile-seed'));
