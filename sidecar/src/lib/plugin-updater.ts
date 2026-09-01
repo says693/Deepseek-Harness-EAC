@@ -435,7 +435,7 @@ export async function applyBuiltinPluginUpdate(ctx: PluginUpdateCtx, source: Plu
   // 4) 合并进覆盖层：以当前资产副本为底（保留 EAC 附加文件），npm 包覆盖
   const merged = path.join(stagingRootDir, 'merged');
   fs.rmSync(merged, { recursive: true, force: true });
-  fs.cpSync(source.assetsDir, merged, { recursive: true, force: true });
+  copyTree(source.assetsDir, merged);
   copyTree(installed as string, merged);
   // 上游 bump 依赖时一并带上（仅顶层直依赖，绝不删除旧文件；主包已合并跳过）。
   const stagedNms = path.join(staging, 'node_modules');
