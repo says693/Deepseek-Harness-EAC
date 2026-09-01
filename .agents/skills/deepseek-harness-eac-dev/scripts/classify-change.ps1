@@ -273,6 +273,10 @@ $unmatchedCodeFiles = [System.Collections.Generic.List[string]]::new()
 $unmatchedDocumentationFiles = [System.Collections.Generic.List[string]]::new()
 $unmatchedOtherFiles = [System.Collections.Generic.List[string]]::new()
 $requiresSkillValidation = $false
+$isAioLayout = (
+    (Test-Path -LiteralPath (Join-Path $root 'tauri-app\Cargo.toml') -PathType Leaf) -and
+    -not (Test-Path -LiteralPath (Join-Path $root 'dsh-desktop\package.json') -PathType Leaf)
+)
 $rootSkillFile = Join-Path $root 'SKILL.md'
 $isSkillSourceRoot = (
     (Split-Path -Leaf $root) -eq 'deepseek-harness-eac-dev' -and
@@ -295,8 +299,18 @@ foreach ($file in $Files) {
     $fileLevel = 'targeted'
     if ($normalized -match '^dsh-desktop/(test/.+\.test\.ts)$') {
         [void]$tests.Add($Matches[1])
+    } elseif ($isAioLayout -and $normalized -match '^(test/.+\.test\.mjs)$') {
+        [void]$tests.Add($Matches[1])
     }
     $matchingRules = @($rules | Where-Object { $matchPath -match $_.Pattern })
+    if ($isAioLayout) {
+        $aioMatches = @($matchingRules | Where-Object { $_.Name -like 'aio-*' })
+        if ($aioMatches.Count -gt 0) {
+            $matchingRules = $aioMatches
+        }
+    } else {
+        $matchingRules = @($matchingRules | Where-Object { $_.Name -notlike 'aio-*' })
+    }
     $exclusiveRules = @($matchingRules | Where-Object { $_.Exclusive })
     if ($exclusiveRules.Count -gt 0) {
         $matchingRules = $exclusiveRules
@@ -347,8 +361,13 @@ foreach ($file in $Files) {
 }
 
 $missingSuggestedTests = [System.Collections.Generic.List[string]]::new()
+$testBase = if (Test-Path -LiteralPath (Join-Path $root 'dsh-desktop\package.json') -PathType Leaf) {
+    Join-Path $root 'dsh-desktop'
+} else {
+    $root
+}
 foreach ($test in $tests) {
-    if (-not (Test-Path -LiteralPath (Join-Path $root "dsh-desktop\$test"))) {
+    if (-not (Test-Path -LiteralPath (Join-Path $testBase $test))) {
         $missingSuggestedTests.Add($test)
     }
 }

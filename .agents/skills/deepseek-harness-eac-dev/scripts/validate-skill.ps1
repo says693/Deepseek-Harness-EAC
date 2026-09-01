@@ -335,21 +335,32 @@ foreach ($entry in $parameterContracts.GetEnumerator()) {
 
 $classifierPath = Join-Path $scriptRoot 'classify-change.ps1'
 if (Test-Path -LiteralPath $classifierPath -PathType Leaf) {
+    $isAioRepo = (
+        $repoRoot -and
+        (Test-Path -LiteralPath (Join-Path $repoRoot 'tauri-app\Cargo.toml') -PathType Leaf) -and
+        -not (Test-Path -LiteralPath (Join-Path $repoRoot 'dsh-desktop\package.json') -PathType Leaf)
+    )
+    $activeRules = if ($isAioRepo) {
+        @($rules | Where-Object { $_.Name -like 'aio-*' -or $_.Name -in @('skill-maintenance', 'documentation', 'ci-workflow', 'git-policy', 'release', 'test-files') })
+    } else {
+        @($rules | Where-Object { $_.Name -notlike 'aio-*' })
+    }
     $declaredTests = @(
-        $rules |
+        $activeRules |
             ForEach-Object { @($_.Tests) } |
             Where-Object { $_ -like 'test/*' } |
-            Sort-Object
+            Sort-Object -Unique
     )
-    if ($repoRoot -and (Test-Path -LiteralPath (Join-Path $repoRoot 'dsh-desktop') -PathType Container)) {
+    $projectTestRoot = if ($isAioRepo) { $repoRoot } elseif ($repoRoot) { Join-Path $repoRoot 'dsh-desktop' } else { $null }
+    if ($projectTestRoot -and (Test-Path -LiteralPath $projectTestRoot -PathType Container)) {
         foreach ($test in $declaredTests) {
             $checkedTests.Add($test)
-            if (-not (Test-Path -LiteralPath (Join-Path $repoRoot "dsh-desktop\$test") -PathType Leaf)) {
+            if (-not (Test-Path -LiteralPath (Join-Path $projectTestRoot $test) -PathType Leaf)) {
                 Add-Error "Classifier test path is missing: $test"
             }
         }
     } elseif ($declaredTests.Count -gt 0) {
-        Add-Warning 'Repository path was not supplied or has no dsh-desktop directory; classifier test paths were not checked.'
+        Add-Warning 'Repository path was not supplied; classifier test paths were not checked.'
     }
 
     $classifierFixtureFiles = @(

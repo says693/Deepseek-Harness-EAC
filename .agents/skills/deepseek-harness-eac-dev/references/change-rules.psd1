@@ -2,6 +2,114 @@
     SchemaVersion = 1
     Rules = @(
         @{
+            Name = 'aio-tauri-rust'
+            Domain = 'tauri-shell'
+            Pattern = '^tauri-app/src/.*\.rs$|^tauri-app/Cargo\.(toml|lock)$'
+            Reference = 'references/tauri-shell.md'
+            Level = 'runtime'
+            Tests = @('test/aio-validation-compat.test.mjs', 'test/sidecar-rpc.test.mjs')
+            Smoke = @('node boot-smoke.js', 'node gui-smoke.js')
+        },
+        @{
+            Name = 'aio-dependency-patches'
+            Domain = 'dependency-patches'
+            Pattern = '^scripts/patch-deps\.js$|^node_modules/@deepseek-ai/dsh-tool-(pwsh|fs|bash)/lib/index\.js$'
+            Reference = 'references/dependency-patches.md'
+            Level = 'package'
+            Tests = @('test/patch-deps-pnpm-hide.test.mjs', 'test/bundle-integrity.test.mjs', 'test/bundled-files.test.mjs')
+            Smoke = @('node tauri-shell/stage-resources.mjs')
+        },
+        @{
+            Name = 'aio-project-scripts'
+            Domain = 'updates-packaging'
+            Pattern = '^tauri-app/scripts/.*\.(js|mjs|ts)$|^scripts/.*\.(js|mjs|cjs)$'
+            Reference = 'references/updates-and-packaging.md'
+            Level = 'full'
+            Tests = @('test/aio-validation-compat.test.mjs', 'test/lite-manifest.test.mjs')
+            Smoke = @()
+        },
+        @{
+            Name = 'aio-plugin-copy'
+            Domain = 'plugins'
+            Pattern = '^sidecar/src/lib/(preset-sync|plugin-updater)\.ts$'
+            Reference = 'references/dsh-plugins.md'
+            Level = 'full'
+            Tests = @('test/preset-sync.test.mjs', 'test/plugin-updater.test.mjs')
+            Smoke = @()
+        },
+        @{
+            Name = 'aio-package-manifest'
+            Domain = 'updates-packaging'
+            Pattern = '^package\.json$|^tauri-app/(package\.json|tauri\.conf\.json)$'
+            Reference = 'references/updates-and-packaging.md'
+            Level = 'package'
+            Tests = @('test/lite-manifest.test.mjs', 'test/bundled-files.test.mjs')
+            Smoke = @('node tauri-shell/stage-resources.mjs')
+        },
+        @{
+            Name = 'aio-packaging'
+            Domain = 'updates-packaging'
+            Pattern = '^tauri-shell/(stage-resources|make-portable)\.mjs$|^tauri-app/nsis/|^electron-builder\.yml$'
+            Reference = 'references/updates-and-packaging.md'
+            Level = 'package'
+            Tests = @('test/aio-validation-compat.test.mjs', 'test/installer-nsh-tauri.test.mjs', 'test/lite-manifest.test.mjs')
+            Smoke = @('node update-smoke.js')
+        },
+        @{
+            Name = 'aio-presets-profile'
+            Domain = 'presets-profile'
+            Pattern = '^assets/agent-presets/|^distribution/profile-seed/|^sidecar/src/lib/preset-sync\.ts$|^test/preset-sync\.test\.mjs$'
+            Reference = 'references/presets-and-profile.md'
+            Level = 'full'
+            Tests = @('test/preset-sync.test.mjs', 'test/patch-row-heal.test.mjs', 'test/resolve-profile.test.mjs', 'test/profile-module-heal.test.mjs')
+            Smoke = @('node boot-smoke.js')
+        },
+        @{
+            Name = 'aio-balance-pricing'
+            Domain = 'product-services'
+            Pattern = '^balance\.js$|^assets/plugins/dsh-balance/'
+            Reference = 'references/product-services.md'
+            Level = 'full'
+            Tests = @('test/balance-pricing.test.mjs')
+            Smoke = @()
+        },
+        @{
+            Name = 'aio-plugin-package'
+            Domain = 'plugins'
+            Pattern = '^assets/plugins/'
+            Reference = 'references/dsh-plugins.md'
+            Level = 'full'
+            Tests = @('test/lite-manifest.test.mjs', 'test/plugin-manager-state.test.mjs')
+            Smoke = @('node tauri-shell/stage-resources.mjs')
+        },
+        @{
+            Name = 'aio-skins'
+            Domain = 'plugins'
+            Pattern = '^assets/skins/|dsh-skin-switch'
+            Reference = 'references/dsh-plugins.md'
+            Level = 'full'
+            Tests = @('test/skin-chrome-zindex.test.mjs', 'test/skin-switch-css.test.mjs', 'test/skin-switch-profile.test.mjs')
+            Smoke = @('node gui-smoke.js')
+        },
+        @{
+            Name = 'aio-update-boundary'
+            Domain = 'updates-packaging'
+            Pattern = '^update-smoke\.js$'
+            Reference = 'references/updates-and-packaging.md'
+            Level = 'package'
+            Tests = @('test/aio-validation-compat.test.mjs', 'test/plugin-updater.test.mjs')
+            Smoke = @('node update-smoke.js')
+        },
+        @{
+            Name = 'aio-electron-fallback'
+            Domain = 'sidecar-bridge'
+            Pattern = '^(main|preload|desktop-core)\.js$'
+            Reference = 'references/sidecar-and-bridge.md'
+            Level = 'runtime'
+            Tests = @('test/bundled-files.test.mjs', 'test/recovery-integration.test.mjs')
+            Smoke = @('node boot-smoke.js')
+        },
+        @{
             Name = 'tauri-rust'
             Domain = 'tauri-shell'
             Pattern = '^tauri-shell/src/.*\.rs$|^tauri-shell/Cargo\.(toml|lock)$'
@@ -22,7 +130,7 @@
         @{
             Name = 'client-update'
             Domain = 'updates-packaging'
-            Pattern = 'client-updater|lib/desktop/client-update|update-smoke'
+            Pattern = '^dsh-desktop/(client-updater|lib/desktop/client-update)|^dsh-desktop/.*update-smoke'
             Reference = 'references/updates-and-packaging.md'
             Level = 'package'
             Tests = @(
@@ -204,7 +312,7 @@
         @{
             Name = 'presets-profile'
             Domain = 'presets-profile'
-            Pattern = 'agent-presets|preset-sync|compact-preset-migrate|patch-row|profile|cordis\.patch'
+            Pattern = '^dsh-desktop/.*(agent-presets|preset-sync|compact-preset-migrate|patch-row|profile|cordis\.patch)'
             Reference = 'references/presets-and-profile.md'
             Level = 'full'
             Tests = @(
@@ -227,7 +335,7 @@
         @{
             Name = 'balance-pricing'
             Domain = 'product-services'
-            Pattern = 'balance\.(ts|js)$|pricing-window|dsh-balance'
+            Pattern = '^dsh-desktop/.*balance\.(ts|js)$|pricing-window|^dsh-desktop/.*dsh-balance'
             Reference = 'references/product-services.md'
             Level = 'full'
             Tests = @(

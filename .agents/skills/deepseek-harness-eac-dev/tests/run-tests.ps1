@@ -103,69 +103,43 @@ Assert-Fixture -Name 'reject-nested-files-json' -Condition (
     $nested.data.status -eq 'blocked'
 ) -Failure ($nested.raw)
 
-$dependencyPatch = Invoke-JsonFixture -Script 'classify-change.ps1' -Arguments @(
-    '-RepoPath', $repoRoot,
-    '-FilesJsonBase64',
-    (ConvertTo-FilesJsonBase64 '["dsh-desktop/scripts/patch-deps.js","dsh-desktop/node_modules/@deepseek-ai/dsh-tool-bash/lib/index.js","tauri-shell/stage-resources.mjs"]')
+$isAioLayout = (
+    (Test-Path -LiteralPath (Join-Path $repoRoot 'tauri-app\Cargo.toml') -PathType Leaf) -and
+    -not (Test-Path -LiteralPath (Join-Path $repoRoot 'dsh-desktop\package.json') -PathType Leaf)
 )
-Assert-Fixture -Name 'dependency-patch-chain' -Condition (
-    $dependencyPatch.exitCode -eq 0 -and
-    $dependencyPatch.data.minimumValidation -eq 'package' -and
-    'dependency-patches' -in @($dependencyPatch.data.matchedRules) -and
-    @($dependencyPatch.data.unmatchedCodeFiles).Count -eq 0
-) -Failure ($dependencyPatch.raw)
+$dependencyFiles = if ($isAioLayout) {
+    '["scripts/patch-deps.js","node_modules/@deepseek-ai/dsh-tool-bash/lib/index.js","tauri-shell/stage-resources.mjs"]'
+} else {
+    '["dsh-desktop/scripts/patch-deps.js","dsh-desktop/node_modules/@deepseek-ai/dsh-tool-bash/lib/index.js","tauri-shell/stage-resources.mjs"]'
+}
+$projectScriptFiles = if ($isAioLayout) { '["tauri-app/scripts/stage.ts"]' } else { '["dsh-desktop/scripts/fetch-npm.ts"]' }
+$pluginCopyFiles = if ($isAioLayout) { '["sidecar/src/lib/preset-sync.ts"]' } else { '["dsh-desktop/lib/plugin-copy.ts"]' }
+$manifestFiles = if ($isAioLayout) { '["package.json"]' } else { '["dsh-desktop/package.json"]' }
+$packagingFiles = if ($isAioLayout) {
+    '["tauri-shell/stage-resources.mjs","tauri-shell/make-portable.mjs","tauri-app/nsis/installer-hooks.nsh"]'
+} else {
+    '["tauri-shell/audit-linux-bundle.mjs","tauri-shell/stage-platform-cache.mjs","tauri-shell/tauri.linux.conf.json","tauri-shell/gen/schemas/linux-schema.json"]'
+}
+$dependencyRule = if ($isAioLayout) { 'aio-dependency-patches' } else { 'dependency-patches' }
+$projectScriptRule = if ($isAioLayout) { 'aio-project-scripts' } else { 'project-scripts' }
+$pluginCopyRule = if ($isAioLayout) { 'aio-plugin-copy' } else { 'plugin-copy' }
+$manifestRule = if ($isAioLayout) { 'aio-package-manifest' } else { 'desktop-package-manifest' }
+$packagingRule = if ($isAioLayout) { 'aio-packaging' } else { 'packaging' }
 
-$projectTypeScript = Invoke-JsonFixture -Script 'classify-change.ps1' -Arguments @(
-    '-RepoPath', $repoRoot,
-    '-FilesJsonBase64',
-    (ConvertTo-FilesJsonBase64 '["dsh-desktop/scripts/fetch-npm.ts"]')
-)
-Assert-Fixture -Name 'project-typescript-script' -Condition (
-    $projectTypeScript.exitCode -eq 0 -and
-    $projectTypeScript.data.status -eq 'ready' -and
-    $projectTypeScript.data.minimumValidation -eq 'full' -and
-    'project-scripts' -in @($projectTypeScript.data.matchedRules) -and
-    @($projectTypeScript.data.unmatchedCodeFiles).Count -eq 0
-) -Failure ($projectTypeScript.raw)
+$dependencyPatch = Invoke-JsonFixture -Script 'classify-change.ps1' -Arguments @('-RepoPath', $repoRoot, '-FilesJsonBase64', (ConvertTo-FilesJsonBase64 $dependencyFiles))
+Assert-Fixture -Name 'dependency-patch-chain' -Condition ($dependencyPatch.exitCode -eq 0 -and $dependencyPatch.data.minimumValidation -eq 'package' -and $dependencyRule -in @($dependencyPatch.data.matchedRules) -and @($dependencyPatch.data.unmatchedCodeFiles).Count -eq 0) -Failure ($dependencyPatch.raw)
 
-$pluginCopy = Invoke-JsonFixture -Script 'classify-change.ps1' -Arguments @(
-    '-RepoPath', $repoRoot,
-    '-FilesJsonBase64',
-    (ConvertTo-FilesJsonBase64 '["dsh-desktop/lib/plugin-copy.ts"]')
-)
-Assert-Fixture -Name 'plugin-copy-classification' -Condition (
-    $pluginCopy.exitCode -eq 0 -and
-    $pluginCopy.data.status -eq 'ready' -and
-    $pluginCopy.data.minimumValidation -eq 'full' -and
-    'plugin-copy' -in @($pluginCopy.data.matchedRules) -and
-    @($pluginCopy.data.unmatchedCodeFiles).Count -eq 0
-) -Failure ($pluginCopy.raw)
+$projectTypeScript = Invoke-JsonFixture -Script 'classify-change.ps1' -Arguments @('-RepoPath', $repoRoot, '-FilesJsonBase64', (ConvertTo-FilesJsonBase64 $projectScriptFiles))
+Assert-Fixture -Name 'project-typescript-script' -Condition ($projectTypeScript.exitCode -eq 0 -and $projectTypeScript.data.status -eq 'ready' -and $projectTypeScript.data.minimumValidation -eq 'full' -and $projectScriptRule -in @($projectTypeScript.data.matchedRules) -and @($projectTypeScript.data.unmatchedCodeFiles).Count -eq 0) -Failure ($projectTypeScript.raw)
 
-$desktopManifest = Invoke-JsonFixture -Script 'classify-change.ps1' -Arguments @(
-    '-RepoPath', $repoRoot,
-    '-FilesJsonBase64',
-    (ConvertTo-FilesJsonBase64 '["dsh-desktop/package.json"]')
-)
-Assert-Fixture -Name 'desktop-package-classification' -Condition (
-    $desktopManifest.exitCode -eq 0 -and
-    $desktopManifest.data.status -eq 'ready' -and
-    $desktopManifest.data.minimumValidation -eq 'package' -and
-    'desktop-package-manifest' -in @($desktopManifest.data.matchedRules) -and
-    @($desktopManifest.data.unmatchedCodeFiles).Count -eq 0
-) -Failure ($desktopManifest.raw)
+$pluginCopy = Invoke-JsonFixture -Script 'classify-change.ps1' -Arguments @('-RepoPath', $repoRoot, '-FilesJsonBase64', (ConvertTo-FilesJsonBase64 $pluginCopyFiles))
+Assert-Fixture -Name 'plugin-copy-classification' -Condition ($pluginCopy.exitCode -eq 0 -and $pluginCopy.data.status -eq 'ready' -and $pluginCopy.data.minimumValidation -eq 'full' -and $pluginCopyRule -in @($pluginCopy.data.matchedRules) -and @($pluginCopy.data.unmatchedCodeFiles).Count -eq 0) -Failure ($pluginCopy.raw)
 
-$tauriPackaging = Invoke-JsonFixture -Script 'classify-change.ps1' -Arguments @(
-    '-RepoPath', $repoRoot,
-    '-FilesJsonBase64',
-    (ConvertTo-FilesJsonBase64 '["tauri-shell/audit-linux-bundle.mjs","tauri-shell/stage-platform-cache.mjs","tauri-shell/tauri.linux.conf.json","tauri-shell/gen/schemas/linux-schema.json"]')
-)
-Assert-Fixture -Name 'tauri-packaging-root-files' -Condition (
-    $tauriPackaging.exitCode -eq 0 -and
-    $tauriPackaging.data.status -eq 'ready' -and
-    $tauriPackaging.data.minimumValidation -eq 'package' -and
-    'packaging' -in @($tauriPackaging.data.matchedRules) -and
-    @($tauriPackaging.data.unmatchedCodeFiles).Count -eq 0
-) -Failure ($tauriPackaging.raw)
+$desktopManifest = Invoke-JsonFixture -Script 'classify-change.ps1' -Arguments @('-RepoPath', $repoRoot, '-FilesJsonBase64', (ConvertTo-FilesJsonBase64 $manifestFiles))
+Assert-Fixture -Name 'desktop-package-classification' -Condition ($desktopManifest.exitCode -eq 0 -and $desktopManifest.data.status -eq 'ready' -and $desktopManifest.data.minimumValidation -eq 'package' -and $manifestRule -in @($desktopManifest.data.matchedRules) -and @($desktopManifest.data.unmatchedCodeFiles).Count -eq 0) -Failure ($desktopManifest.raw)
+
+$tauriPackaging = Invoke-JsonFixture -Script 'classify-change.ps1' -Arguments @('-RepoPath', $repoRoot, '-FilesJsonBase64', (ConvertTo-FilesJsonBase64 $packagingFiles))
+Assert-Fixture -Name 'tauri-packaging-root-files' -Condition ($tauriPackaging.exitCode -eq 0 -and $tauriPackaging.data.status -eq 'ready' -and $tauriPackaging.data.minimumValidation -eq 'package' -and $packagingRule -in @($tauriPackaging.data.matchedRules) -and @($tauriPackaging.data.unmatchedCodeFiles).Count -eq 0) -Failure ($tauriPackaging.raw)
 
 $unknownCode = Invoke-JsonFixture -Script 'classify-change.ps1' -Arguments @(
     '-RepoPath', $repoRoot,
@@ -187,14 +161,16 @@ Assert-Fixture -Name 'documentation-rule' -Condition (
     'documentation' -in @($documentation.data.matchedRules)
 ) -Failure ($documentation.raw)
 
+$testFixtureFile = if ($isAioLayout) { 'test/preset-sync.test.mjs' } else { 'dsh-desktop/test/preset-sync.test.ts' }
+$testFixtureSuggestion = if ($isAioLayout) { 'test/preset-sync.test.mjs' } else { 'test/preset-sync.test.ts' }
 $typescriptTest = Invoke-JsonFixture -Script 'classify-change.ps1' -Arguments @(
     '-RepoPath', $repoRoot,
-    '-FilesJsonBase64', (ConvertTo-FilesJsonBase64 '["dsh-desktop/test/preset-sync.test.ts"]')
+    '-FilesJsonBase64', (ConvertTo-FilesJsonBase64 (ConvertTo-Json -InputObject @($testFixtureFile) -Compress))
 )
 Assert-Fixture -Name 'typescript-test-path' -Condition (
     $typescriptTest.exitCode -eq 0 -and
     $typescriptTest.data.status -eq 'ready' -and
-    'test/preset-sync.test.ts' -in @($typescriptTest.data.suggestedTests) -and
+    $testFixtureSuggestion -in @($typescriptTest.data.suggestedTests) -and
     @($typescriptTest.data.missingSuggestedTests).Count -eq 0
 ) -Failure ($typescriptTest.raw)
 
@@ -233,10 +209,11 @@ Assert-Fixture -Name 'verify-files-json' -Condition (
     @($verify.data.classification.files).Count -eq 2
 ) -Failure ($verify.raw)
 
+$levelFloorFile = if ($isAioLayout) { 'balance.js' } else { 'dsh-desktop/lib/desktop/balance.ts' }
 $levelFloor = Invoke-JsonFixture -Script 'verify-change.ps1' -Arguments @(
     '-RepoPath', $repoRoot,
     '-Level', 'targeted',
-    '-FilesJsonBase64', (ConvertTo-FilesJsonBase64 '["dsh-desktop/lib/desktop/balance.ts"]')
+    '-FilesJsonBase64', (ConvertTo-FilesJsonBase64 (ConvertTo-Json -InputObject @($levelFloorFile) -Compress))
 )
 Assert-Fixture -Name 'validation-level-floor' -Condition (
     $levelFloor.exitCode -eq 0 -and
