@@ -2,9 +2,12 @@
 
 `DSHEAC AIO`（**All-in-One**）是基于 DSH-Desktop-EAC `v4.5-lite` 源码基线重构的 Windows x64 一体化桌面发行版。AIO 指安装包整合 Tauri 原生壳、Node.js、npm、`@deepseek-ai/dsh`、当前配套插件和经脱敏的首次运行 profile，目标机器无需预装 Node.js。
 
-> **版型：AIO（All-in-One）**  
-> **用户可见版本：v1**  
-> 机器内部 SemVer：`1.0.0`  
+> **版型：AIO（All-in-One）**
+>
+> **用户可见版本：v1**
+>
+> 机器内部 SemVer：`1.0.0`
+>
 > 上游源码基线：`v4.5-lite`，commit `de55ef6d5319eacc24ce60309acc261b9fb78b6c`
 
 AIO 不表示包含上游项目所有历史功能；实际功能以本仓库打包的运行时、插件和 profile 清单为准。

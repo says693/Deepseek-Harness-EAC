@@ -1,6 +1,7 @@
 # DSHEAC AIO v1 — Code and Release Audit
 
-日期：2026-09-01  
+日期：2026-09-01
+
 范围：Tauri 2/Rust 壳、Node sidecar、NSIS、构建/验证脚本、profile seed 与发布资源。
 
 ## 已确认并修复

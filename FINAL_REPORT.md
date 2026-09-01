@@ -1,9 +1,13 @@
 # DSHEAC AIO v1 — 最终交付报告
 
-完成时间：2026-09-02  
-版型：AIO（All-in-One）  
-用户版本：v1  
-机器 SemVer：1.0.0  
+完成时间：2026-09-02
+
+版型：AIO（All-in-One）
+
+用户版本：v1
+
+机器 SemVer：1.0.0
+
 上游溯源：DSH-Desktop-EAC `v4.5-lite` / `de55ef6d5319eacc24ce60309acc261b9fb78b6c`
 
 ## 最终产物
