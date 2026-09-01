@@ -56,16 +56,18 @@ impl Paths {
                 .join("bin")
                 .join("npm-cli.js")
         };
-        // AIO 发行版使用自己的 appData 子目录，既不读取也不改写
-        // 当前运行的 v4Lite ~/.dsh-v4lite。显式 DSH_HOME 仍供自动化验证覆盖。
-        let dsh_home = match std::env::var("DSH_HOME") {
-            Ok(v) if !v.trim().is_empty() => PathBuf::from(v),
-            _ => app_data_dir.join("dsh-home"),
-        };
-        // 测试/自动化可整体重定位 userData（对齐 Electron 版 DSH_DESKTOP_USERDATA）。
+        // 便携包在 exe 同级带 `.dsh-portable`，数据进入 `.dsh-aio-data`；
+        // 安装版继续使用独立 appData。环境变量始终优先，供自动化与高级用户覆盖。
+        let portable_data = portable_data_dir(packaged, resource_dir.as_deref());
         let user_data = match std::env::var("DSH_DESKTOP_USERDATA") {
             Ok(v) if !v.trim().is_empty() => PathBuf::from(v),
-            _ => app_data_dir,
+            _ => portable_data.clone().unwrap_or(app_data_dir),
+        };
+        let dsh_home = match std::env::var("DSH_HOME") {
+            Ok(v) if !v.trim().is_empty() => PathBuf::from(v),
+            _ => portable_data
+                .map(|dir| dir.join("dsh-home"))
+                .unwrap_or_else(|| user_data.join("dsh-home")),
         };
         Paths {
             app_root,
@@ -183,6 +185,15 @@ fn copy_tree(source: &std::path::Path, destination: &std::path::Path) -> Result<
 /// 剥掉 Windows verbatim 前缀（\\?\ 与 \\?\UNC\）。
 /// Tauri 的路径解析器会返回 verbatim 路径；Node 把以 \\?\ 开头的主入口
 /// 参数解析失败（EISDIR lstat 'D:'），spawn 子进程前必须还原普通路径。
+fn portable_data_dir(packaged: bool, resource_dir: Option<&std::path::Path>) -> Option<PathBuf> {
+    if !packaged {
+        return None;
+    }
+    resource_dir
+        .filter(|dir| dir.join(".dsh-portable").is_file())
+        .map(|dir| dir.join(".dsh-aio-data"))
+}
+
 fn strip_verbatim(p: PathBuf) -> PathBuf {
     let s = p.as_os_str().to_string_lossy();
     if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
@@ -191,5 +202,20 @@ fn strip_verbatim(p: PathBuf) -> PathBuf {
         PathBuf::from(rest)
     } else {
         p
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn portable_marker_selects_sibling_data_root() {
+        let root = std::env::temp_dir().join(format!("dsh-aio-portable-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&root);
+        std::fs::write(root.join(".dsh-portable"), b"").unwrap();
+        assert_eq!(portable_data_dir(true, Some(&root)), Some(root.join(".dsh-aio-data")));
+        assert_eq!(portable_data_dir(false, Some(&root)), None);
+        let _ = std::fs::remove_dir_all(root);
     }
 }
