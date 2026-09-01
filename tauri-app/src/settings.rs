@@ -11,7 +11,9 @@ pub fn load_at(file: &Path) -> serde_json::Value {
 
 fn read_from_disk(file: &Path) -> serde_json::Value {
     match std::fs::read_to_string(file) {
-        Ok(text) => serde_json::from_str(&text).unwrap_or(serde_json::Value::Object(Default::default())),
+        Ok(text) => {
+            serde_json::from_str(&text).unwrap_or(serde_json::Value::Object(Default::default()))
+        }
         Err(_) => serde_json::Value::Object(Default::default()),
     }
 }
@@ -36,7 +38,10 @@ pub fn save_at(file: &Path, value: &serde_json::Value) -> Result<(), String> {
 }
 
 pub fn get_bool(file: &Path, key: &str, default: bool) -> bool {
-    load_at(file).get(key).and_then(|v| v.as_bool()).unwrap_or(default)
+    load_at(file)
+        .get(key)
+        .and_then(|v| v.as_bool())
+        .unwrap_or(default)
 }
 
 pub fn set_key(file: &Path, key: &str, value: serde_json::Value) -> Result<(), String> {

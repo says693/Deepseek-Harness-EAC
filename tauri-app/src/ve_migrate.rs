@@ -29,7 +29,9 @@ fn mark_migrated(stamp: &Path) {
 
 /// Electron 版 userData 目录（真实安装场景）：%APPDATA%\Deepseek Harness EAC。
 fn electron_userdata() -> Option<PathBuf> {
-    std::env::var("APPDATA").ok().map(|d| PathBuf::from(d).join("Deepseek Harness EAC"))
+    std::env::var("APPDATA")
+        .ok()
+        .map(|d| PathBuf::from(d).join("Deepseek Harness EAC"))
 }
 
 /// 生成迁移 initialization_script。
@@ -72,7 +74,10 @@ pub fn load_migration_script(paths: &Paths, log: &crate::logging::Logger) -> Opt
         if let Some(script) = migration_script_for(&f, &stamp) {
             log.log(
                 "boot",
-                &format!("检测到 Electron 版 localStorage 导出（{}），将在页面加载时迁移", f.display()),
+                &format!(
+                    "检测到 Electron 版 localStorage 导出（{}），将在页面加载时迁移",
+                    f.display()
+                ),
             );
             return Some(script);
         }
@@ -103,7 +108,10 @@ mod tests {
         assert!(s.contains(r#""ui.pane":"left""#), "脚本应内嵌键值");
         assert!(s.contains("localStorage.setItem"));
         assert!(stamp.exists(), "成功后应写 stamp");
-        assert!(migration_script_for(&export, &stamp).is_none(), "二次调用应幂等跳过");
+        assert!(
+            migration_script_for(&export, &stamp).is_none(),
+            "二次调用应幂等跳过"
+        );
         let _ = std::fs::remove_dir_all(&d);
     }
 
@@ -111,14 +119,23 @@ mod tests {
     fn skips_bad_or_missing() {
         let d = tmpdir("bad");
         let stamp = d.join("stamp");
-        assert!(migration_script_for(&d.join("nope.json"), &stamp).is_none(), "无文件应 None");
+        assert!(
+            migration_script_for(&d.join("nope.json"), &stamp).is_none(),
+            "无文件应 None"
+        );
         let bad = d.join("bad.json");
         std::fs::write(&bad, "not json").unwrap();
-        assert!(migration_script_for(&bad, &stamp).is_none(), "坏 JSON 应 None");
+        assert!(
+            migration_script_for(&bad, &stamp).is_none(),
+            "坏 JSON 应 None"
+        );
         assert!(!stamp.exists(), "失败不应写 stamp");
         let empty = d.join("empty.json");
         std::fs::write(&empty, "{}").unwrap();
-        assert!(migration_script_for(&empty, &stamp).is_none(), "空对象视为已迁移");
+        assert!(
+            migration_script_for(&empty, &stamp).is_none(),
+            "空对象视为已迁移"
+        );
         assert!(stamp.exists(), "空对象应写 stamp");
         let _ = std::fs::remove_dir_all(&d);
     }
