@@ -63,8 +63,9 @@ async function startSidecar(home, userData, logs) {
       let msg;
       try { msg = JSON.parse(line); } catch { continue; }
       if (Number.isFinite(msg.id) && pending.has(msg.id)) {
-        const { resolve } = pending.get(msg.id);
+        const { resolve, timer } = pending.get(msg.id);
         pending.delete(msg.id);
+        clearTimeout(timer);
         resolve(msg);
       } else if (msg.event) {
         events.push(msg);
@@ -74,16 +75,18 @@ async function startSidecar(home, userData, logs) {
   child.stderr.on('data', (c) => events.push({ event: 'log', tag: 'stderr', msg: String(c) }));
   const rpc = (method, params = {}, timeoutMs = 30000) => new Promise((resolve, reject) => {
     const id = nextId++;
-    pending.set(id, { resolve: (m) => resolve(m) });
-    child.stdin.write(JSON.stringify({ id, method, params }) + '\n');
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       if (pending.has(id)) {
         pending.delete(id);
         reject(new Error('rpc 超时: ' + method));
       }
     }, timeoutMs);
+    pending.set(id, { resolve: (m) => resolve(m), timer });
+    child.stdin.write(JSON.stringify({ id, method, params }) + '\n');
   });
   const kill = () => {
+    for (const { timer } of pending.values()) clearTimeout(timer);
+    pending.clear();
     try { child.stdin.end(); } catch {}
     try { child.kill(); } catch {}
   };
