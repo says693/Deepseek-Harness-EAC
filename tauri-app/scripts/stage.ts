@@ -26,6 +26,7 @@ const REPO_ROOT = path.resolve(TAURI_APP, '..');
 const RESOURCES = path.join(TAURI_APP, 'resources');
 const APP = path.join(RESOURCES, 'app');
 const NM_SRC = path.join(REPO_ROOT, 'node_modules');
+const PROFILE_SEED = path.join(REPO_ROOT, 'distribution', 'profile-seed');
 
 // sidecar 运行时 = TypeScript 编译产物（sidecar/dist 整树，含 shell-host 与
 // 全部 lib 模块）。构建顺序：npm run sidecar:build 先行，再跑本脚本。
@@ -35,6 +36,20 @@ const SCRIPTS_JS = ['koffi-preflight.cjs'];
 
 function rmrf(p) {
   fs.rmSync(p, { recursive: true, force: true });
+  if (!fs.existsSync(p)) return;
+  if (process.platform === 'win32') {
+    // Some Windows filesystem/AV combinations acknowledge Node rmSync but keep
+    // the tree. Use a constant PowerShell command with the path passed as a
+    // positional argument; no project-controlled text is interpolated.
+    execFileSync('powershell.exe', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      '& { Remove-Item -LiteralPath $args[0] -Recurse -Force -ErrorAction Stop }',
+      p,
+    ], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  }
+  if (fs.existsSync(p)) throw new Error(`无法清空旧 staging: ${p}`);
 }
 
 function copyFile(rel) {
@@ -44,8 +59,121 @@ function copyFile(rel) {
   fs.copyFileSync(src, dst);
 }
 
+const releaseSkip = { files: 0, dirs: 0, bytes: 0 };
+
+function skipReleaseFile(name) {
+  const ext = path.extname(name).toLowerCase();
+  return ext === '.map' || ext === '.pdb' || /\.d\.(?:c|m)?ts$/i.test(name);
+}
+
 function copyTree(src, dst) {
-  fs.cpSync(src, dst, { recursive: true, dereference: true, force: true });
+  const stat = fs.statSync(src);
+  if (!stat.isDirectory()) {
+    if (skipReleaseFile(path.basename(src))) {
+      releaseSkip.files += 1;
+      releaseSkip.bytes += stat.size;
+      return;
+    }
+    fs.mkdirSync(path.dirname(dst), { recursive: true });
+    fs.copyFileSync(src, dst);
+    return;
+  }
+  fs.mkdirSync(dst, { recursive: true });
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    const source = path.join(src, entry.name);
+    const destination = path.join(dst, entry.name);
+    if (entry.isDirectory()) {
+      const normalized = source.replace(/\\/g, '/');
+      const foreignArch = entry.name === 'win32-arm64' || entry.name === 'win10-arm64';
+      const duplicateOtelBuild =
+        /\/node_modules\/@opentelemetry\/resources\/build$/.test(normalized.replace(/\/(?:esm|esnext)$/, '')) &&
+        (entry.name === 'esm' || entry.name === 'esnext');
+      if (foreignArch || duplicateOtelBuild) {
+        releaseSkip.dirs += 1;
+        releaseSkip.bytes += dirSize(source);
+        continue;
+      }
+      copyTree(source, destination);
+    } else if (entry.isSymbolicLink()) {
+      copyTree(fs.realpathSync(source), destination);
+    } else if (entry.isFile()) {
+      if (skipReleaseFile(entry.name)) {
+        releaseSkip.files += 1;
+        try { releaseSkip.bytes += fs.statSync(source).size; } catch { /* race */ }
+        continue;
+      }
+      fs.copyFileSync(source, destination);
+    }
+  }
+}
+
+function longPath(p) {
+  return process.platform === 'win32' ? path.toNamespacedPath(p) : p;
+}
+
+function pruneReleaseTree(root) {
+  let removedFiles = 0;
+  let removedBytes = 0;
+  let removedDirs = 0;
+  const errors = [];
+
+  function walk(dir) {
+    let entries;
+    try {
+      entries = fs.readdirSync(longPath(dir), { withFileTypes: true });
+    } catch (err) {
+      errors.push(`${dir}: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+    for (const entry of entries) {
+      const target = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        // The installer is x64-only. Foreign node-pty binaries cannot be loaded
+        // and add thousands of decompression and antivirus scan operations.
+        if (entry.name === 'win32-arm64' || entry.name === 'win10-arm64') {
+          removedBytes += dirSize(target);
+          fs.rmSync(longPath(target), { recursive: true, force: true });
+          removedDirs += 1;
+          continue;
+        }
+        walk(target);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const ext = path.extname(entry.name).toLowerCase();
+      const declaration = /\.d\.(?:c|m)?ts$/i.test(entry.name);
+      if (ext === '.map' || ext === '.pdb' || declaration) {
+        try { removedBytes += fs.statSync(longPath(target)).size; } catch { /* race */ }
+        try {
+          fs.rmSync(longPath(target), { force: true });
+          if (fs.existsSync(longPath(target))) throw new Error('file still exists after rmSync');
+          removedFiles += 1;
+        } catch (err) {
+          errors.push(`${target}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    }
+  }
+
+  walk(root);
+  return { removedFiles, removedDirs, removedBytes, errors };
+}
+
+function findForbiddenReleaseFiles(root) {
+  const found = [];
+  function walk(dir) {
+    const entries = fs.readdirSync(longPath(dir), { withFileTypes: true });
+    for (const entry of entries) {
+      const target = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(target);
+      else if (entry.isFile()) {
+        const ext = path.extname(entry.name).toLowerCase();
+        if (ext === '.map' || ext === '.pdb' || /\.d\.(?:c|m)?ts$/i.test(entry.name)) found.push(target);
+      }
+    }
+  }
+  walk(root);
+  return found;
 }
 
 /// 与 integrity.rs count_files 同口径：目录递归计数，符号链接计为文件。
@@ -111,16 +239,19 @@ function verifyStagedBundle(nmRoot, manifest) {
 }
 
 function productionClosure() {
-  const npmArgs = ['ls', '--omit=dev', '--all', '--parseable'];
-  // Windows 下 npm 是 .cmd（Node 因 CVE-2024-27980 禁止无 shell 直接 spawn），走 shell。
+  const npmCli = path.join(REPO_ROOT, 'vendor', 'npm', 'bin', 'npm-cli.js');
+  const npmArgs = [npmCli, 'ls', '--omit=dev', '--all', '--parseable'];
+  if (!fs.existsSync(npmCli)) throw new Error(`缺少内置 npm CLI: ${npmCli}`);
   let out;
   try {
-    out = execFileSync('npm', npmArgs, {
+    // Execute npm-cli.js with the current Node process. This avoids .cmd and
+    // shell interpolation entirely (Node DEP0190 / CVE-2024-27980 boundary).
+    out = execFileSync(process.execPath, npmArgs, {
       cwd: REPO_ROOT,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
       maxBuffer: 64 * 1024 * 1024,
-      shell: process.platform === 'win32',
+      shell: false,
     });
   } catch (e) {
     // npm ls 在缺依赖/越权树时退出码非 0，但 stdout 仍给出可达闭包；
@@ -158,6 +289,7 @@ function main() {
   rmrf(APP);
   rmrf(path.join(RESOURCES, 'node'));
   rmrf(path.join(RESOURCES, 'npm'));
+  rmrf(path.join(RESOURCES, 'profile-seed'));
 
   // 1) 根 package.json + sidecar TS 编译产物 + koffi 探针脚本 + assets
   copyFile('package.json');
@@ -170,6 +302,13 @@ function main() {
   copyTree(path.join(REPO_ROOT, 'assets'), path.join(APP, 'assets'));
   console.log('[stage] app: package.json + sidecar/dist 编译产物 + scripts + assets 完成');
 
+  if (!fs.existsSync(path.join(PROFILE_SEED, 'profiles', 'web-desktop', 'node_modules'))) {
+    console.error('[stage] 缺少 distribution/profile-seed 中的当前插件与技能快照');
+    process.exit(1);
+  }
+  copyTree(PROFILE_SEED, path.join(RESOURCES, 'profile-seed'));
+  console.log('[stage] 当前 web-desktop 插件与技能快照完成');
+
   // 2) 生产依赖闭包
   const closure = productionClosure();
   for (const pkgPath of closure) {
@@ -180,19 +319,7 @@ function main() {
   }
   console.log(`[stage] app: node_modules 闭包 ${closure.length} 个包`);
 
-  // 3) bundle-manifest（对 staging 后的树生成）+ 同口径自检
-  const nmDst = path.join(APP, 'node_modules');
-  const manifest = buildBundleManifest(nmDst);
-  fs.writeFileSync(path.join(APP, 'bundle-manifest.json'), JSON.stringify(manifest, null, 2) + '\n', 'utf8');
-  const problems = verifyStagedBundle(nmDst, manifest);
-  if (problems.length) {
-    console.error('[stage] 完整性自检失败:');
-    for (const p of problems.slice(0, 20)) console.error('  ' + p);
-    process.exit(1);
-  }
-  console.log(`[stage] app: bundle-manifest.json（${Object.keys(manifest.packages).length} 个包）自检通过`);
-
-  // 4) 内置 node / npm 运行时
+  // 3) 内置 node / npm 运行时
   const vendNode = path.join(REPO_ROOT, 'vendor', 'node');
   const vendNpm = path.join(REPO_ROOT, 'vendor', 'npm');
   if (!fs.existsSync(path.join(vendNode, 'node.exe'))) {
@@ -206,6 +333,33 @@ function main() {
   copyTree(vendNode, path.join(RESOURCES, 'node'));
   copyTree(vendNpm, path.join(RESOURCES, 'npm'));
   console.log('[stage] node/npm 运行时完成');
+
+  // Release-only filtering happens while copying, never by mutating the source
+  // tree. Avoiding the write is faster and works even when antivirus or the
+  // host filesystem virtualizes delete operations.
+  console.log(
+    `[stage] release filter: files=${releaseSkip.files} dirs=${releaseSkip.dirs} ` +
+    `saved=${(releaseSkip.bytes / 1024 / 1024).toFixed(1)} MB`,
+  );
+  const forbiddenLeft = [...findForbiddenReleaseFiles(APP), ...findForbiddenReleaseFiles(path.join(RESOURCES, 'profile-seed'))];
+  if (forbiddenLeft.length) {
+    console.error(`[stage] release filter incomplete: remaining=${forbiddenLeft.length}`);
+    for (const p of forbiddenLeft.slice(0, 30)) console.error('  ' + p);
+    process.exit(1);
+  }
+
+  // 4) Generate the integrity manifest after pruning so the first launch
+  // validates the exact shipped tree instead of the pre-prune source tree.
+  const nmDst = path.join(APP, 'node_modules');
+  const manifest = buildBundleManifest(nmDst);
+  fs.writeFileSync(path.join(APP, 'bundle-manifest.json'), JSON.stringify(manifest, null, 2) + '\n', 'utf8');
+  const problems = verifyStagedBundle(nmDst, manifest);
+  if (problems.length) {
+    console.error('[stage] 完整性自检失败:');
+    for (const p of problems.slice(0, 20)) console.error('  ' + p);
+    process.exit(1);
+  }
+  console.log(`[stage] app: bundle-manifest.json（${Object.keys(manifest.packages).length} 个包）自检通过`);
 
   const mb = (n) => `${(n / 1024 / 1024).toFixed(1)} MB`;
   console.log(`[stage] app=${mb(dirSize(APP))} node=${mb(dirSize(path.join(RESOURCES, 'node')))} npm=${mb(dirSize(path.join(RESOURCES, 'npm')))}`);
