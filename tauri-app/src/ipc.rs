@@ -41,21 +41,33 @@ fn ensure_origin(state: &AppState, window: &WebviewWindow) -> Result<(), String>
     if web_origin.as_deref() == Some(cur_origin.as_str()) {
         return Ok(());
     }
-    state.log.log("ipc", &format!("已拒绝非预期来源的命令调用: {}", cur_origin));
+    state.log.log(
+        "ipc",
+        &format!("已拒绝非预期来源的命令调用: {}", cur_origin),
+    );
     Err("unauthorized".into())
 }
 
-pub fn open_url_external(url: &str) {
-    // 防御纵深：内部页地址绝不外泄到系统浏览器（on_navigation 白名单已放行
-    // tauri.localhost，这里再挡一道，防未来调用点误传内部地址）。
-    if url.contains("tauri.localhost") {
-        return;
+fn normalized_external_url(value: &str) -> Option<String> {
+    let parsed = tauri::Url::parse(value).ok()?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return None;
     }
-    // PowerShell Start-Process 对 URL/路径都稳，避免 cmd 特殊字符问题。
-    let u = url.replace('\'', "''");
-    let mut cmd = std::process::Command::new("powershell");
-    cmd.args(["-NoProfile", "-NonInteractive", "-Command", &format!("Start-Process '{}'", u)]);
-    // GUI 子系统 spawn 控制台程序默认闪黑窗；补 NO_WINDOW。
+    if parsed.host_str().is_none() || !parsed.username().is_empty() || parsed.password().is_some() {
+        return None;
+    }
+    if parsed.host_str() == Some("tauri.localhost") {
+        return None;
+    }
+    Some(parsed.to_string())
+}
+
+pub fn open_url_external(url: &str) {
+    let Some(url) = normalized_external_url(url) else { return };
+    // Avoid PowerShell/cmd string interpolation. explorer.exe delegates a URL
+    // argument to the registered system browser without introducing a shell.
+    let mut cmd = std::process::Command::new("explorer.exe");
+    cmd.arg(url);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -74,7 +86,7 @@ pub fn open_path_explorer(path: &str) {
 
 #[tauri::command]
 pub fn renderer_heartbeat(state: St<'_>, window: WebviewWindow) {
-    if ensure_main(&window).is_err() {
+    if ensure_origin(&state, &window).is_err() {
         return;
     }
     state.recovery.note_heartbeat();
@@ -82,7 +94,7 @@ pub fn renderer_heartbeat(state: St<'_>, window: WebviewWindow) {
 
 #[tauri::command]
 pub fn page_error(state: St<'_>, window: WebviewWindow, payload: String) {
-    if ensure_main(&window).is_err() {
+    if ensure_origin(&state, &window).is_err() {
         return;
     }
     state.log.log("page-error", &payload);
@@ -90,7 +102,7 @@ pub fn page_error(state: St<'_>, window: WebviewWindow, payload: String) {
 
 #[tauri::command]
 pub fn chrome_init(state: St<'_>, window: WebviewWindow) -> Value {
-    if ensure_main(&window).is_err() {
+    if ensure_origin(&state, &window).is_err() {
         return Value::Null;
     }
     let icon_path = state.paths.assets_dir().join("icon.png");
@@ -103,7 +115,7 @@ pub fn chrome_init(state: St<'_>, window: WebviewWindow) -> Value {
     let doc = crate::settings::load_at(&state.paths.settings_file());
     let (agent_version, agent_source) = agent_version_info(state.inner());
     json!({
-        "appVersion": state.paths.version,
+        "appVersion": crate::DISPLAY_RELEASE,
         "agentVersion": agent_version,
         "agentSource": agent_source,
         "closeToTray": doc.get("closeToTray").and_then(|v| v.as_bool()).unwrap_or(true),
@@ -111,7 +123,7 @@ pub fn chrome_init(state: St<'_>, window: WebviewWindow) -> Value {
         "shortcutPolicy": crate::settings::shortcut_policy_of(&doc),
         "iconDataUri": icon_data_uri,
         "repoUrls": repo_urls(),
-        "staticPort": state.preview_port.load(Ordering::SeqCst),
+        "staticPort": 0,
         "desktopShell": "tauri",
     })
 }
@@ -156,11 +168,18 @@ fn repo_urls() -> Value {
 }
 
 #[tauri::command]
-pub fn chrome_window(app: AppHandle, state: St<'_>, window: WebviewWindow, action: String) -> Value {
-    if ensure_main(&window).is_err() {
+pub fn chrome_window(
+    app: AppHandle,
+    state: St<'_>,
+    window: WebviewWindow,
+    action: String,
+) -> Value {
+    if ensure_origin(&state, &window).is_err() {
         return Value::Null;
     }
-    let Some(win) = app.get_webview_window("main") else { return Value::Null };
+    let Some(win) = app.get_webview_window("main") else {
+        return Value::Null;
+    };
     match action.as_str() {
         "minimize" => {
             let _ = win.minimize();
@@ -221,7 +240,8 @@ pub fn chrome_menu(
                 if matches!(v, "ask" | "minimize" | "quit") {
                     let _ = crate::settings::set_key(&settings_file, "exitAction", json!(v));
                     // 同步旧字段，避免降级回旧版本时行为回退。
-                    let _ = crate::settings::set_key(&settings_file, "closeToTray", json!(v != "quit"));
+                    let _ =
+                        crate::settings::set_key(&settings_file, "closeToTray", json!(v != "quit"));
                 }
             }
         }
@@ -237,7 +257,11 @@ pub fn chrome_menu(
                         DialogSpec {
                             title: "重启 Web 服务失败".into(),
                             message: "dsh web 服务重启未成功。".into(),
-                            detail: r.get("error").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                            detail: r
+                                .get("error")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
                             buttons: vec!["确定".into()],
                             default_index: 0,
                             checkbox: None,
@@ -256,7 +280,9 @@ pub fn chrome_menu(
                 "never"
             };
             let _ = crate::settings::set_key(&settings_file, "shortcutPolicy", json!(next));
-            state.log.log("boot", &format!("桌面快捷方式自动维护: {}", next));
+            state
+                .log
+                .log("boot", &format!("桌面快捷方式自动维护: {}", next));
         }
         "about" => show_about(app.clone(), state.inner().clone()),
         "quit" => {
@@ -284,7 +310,7 @@ fn show_about(app: AppHandle, state: Arc<AppState>) {
     let gitee = urls["gitee"].as_str().unwrap_or("").to_string();
     let (agent_version, agent_source) = agent_version_info(&state);
     let detail = format!(
-        "DeepSeek Harness 桌面客户端\n\nagent 版本：{}（{}）\n数据目录：{}\nDSH_HOME：{}\n\n项目仓库：\n  GitHub: {}\n  Gitee:  {}\n\n交流群：EAC 交流群（群号 523412163）\n反馈问题：⋯ 菜单 → 反馈建议",
+        "DSHEAC AIO（All-in-One）v1\n兼容 DeepSeek Harness\n\nagent 版本：{}（{}）\n数据目录：{}\nDSH_HOME：{}\n\n上游参考：\n  GitHub: {}\n  Gitee:  {}\n\n本发行版为非官方社区重构版。", 
         agent_version,
         agent_source,
         state.paths.user_data.display(),
@@ -293,10 +319,14 @@ fn show_about(app: AppHandle, state: Arc<AppState>) {
         gitee
     );
     let spec = DialogSpec {
-        title: "关于 Deepseek Harness EAC".into(),
-        message: format!("Deepseek Harness EAC（封装版本 {}）", state.paths.version),
+        title: "关于 DSHEAC AIO v1".into(),
+        message: "DSHEAC AIO（All-in-One）v1".into(),
         detail,
-        buttons: vec!["复制 GitHub 地址".into(), "复制 Gitee 地址".into(), "确定".into()],
+        buttons: vec![
+            "复制 GitHub 地址".into(),
+            "复制 Gitee 地址".into(),
+            "确定".into(),
+        ],
         default_index: 0,
         checkbox: None,
         icon: DialogIcon::Info,
@@ -323,7 +353,11 @@ fn show_about(app: AppHandle, state: Arc<AppState>) {
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub fn chrome_restart_service(state: St<'_>, window: WebviewWindow, intent: Option<String>) -> Value {
+pub fn chrome_restart_service(
+    state: St<'_>,
+    window: WebviewWindow,
+    intent: Option<String>,
+) -> Value {
     if intent.as_deref() != Some("restart-service") {
         return json!({"ok": false, "error": "missing-intent"});
     }
@@ -336,7 +370,12 @@ pub fn chrome_restart_service(state: St<'_>, window: WebviewWindow, intent: Opti
 }
 
 #[tauri::command]
-pub fn guard_action(state: St<'_>, window: WebviewWindow, action: String, value: Option<Value>) -> Value {
+pub fn guard_action(
+    state: St<'_>,
+    window: WebviewWindow,
+    action: String,
+    value: Option<Value>,
+) -> Value {
     if ensure_origin(&state, &window).is_err() {
         return json!({"ok": false, "error": "unauthorized"});
     }
@@ -358,17 +397,26 @@ pub fn guard_action(state: St<'_>, window: WebviewWindow, action: String, value:
 
 #[tauri::command]
 pub fn plugin_list(state: St<'_>, window: WebviewWindow) -> Value {
-    if ensure_main(&window).is_err() {
+    if ensure_origin(&state, &window).is_err() {
         return json!([]);
     }
-    match state.sidecar().ok().map(|s| s.call("plugin.list", json!({}))) {
+    match state
+        .sidecar()
+        .ok()
+        .map(|s| s.call("plugin.list", json!({})))
+    {
         Some(Ok(v)) => v,
         _ => json!([]),
     }
 }
 
 #[tauri::command]
-pub fn plugin_set_enabled(state: St<'_>, window: WebviewWindow, id: String, enabled: bool) -> Value {
+pub fn plugin_set_enabled(
+    state: St<'_>,
+    window: WebviewWindow,
+    id: String,
+    enabled: bool,
+) -> Value {
     if ensure_origin(&state, &window).is_err() {
         return json!({"ok": false, "error": "unauthorized"});
     }
@@ -389,7 +437,12 @@ pub fn plugin_set_enabled(state: St<'_>, window: WebviewWindow, id: String, enab
 }
 
 #[tauri::command]
-pub fn plugin_set_removed(state: St<'_>, window: WebviewWindow, id: String, removed: bool) -> Value {
+pub fn plugin_set_removed(
+    state: St<'_>,
+    window: WebviewWindow,
+    id: String,
+    removed: bool,
+) -> Value {
     if ensure_origin(&state, &window).is_err() {
         return json!({"ok": false, "error": "unauthorized"});
     }
@@ -405,7 +458,7 @@ pub fn plugin_set_removed(state: St<'_>, window: WebviewWindow, id: String, remo
 
 #[tauri::command]
 pub fn plugin_updates(state: St<'_>, window: WebviewWindow, force: Option<bool>) -> Value {
-    if ensure_main(&window).is_err() {
+    if ensure_origin(&state, &window).is_err() {
         return Value::Null;
     }
     let sc = match state.sidecar() {
@@ -458,7 +511,7 @@ pub fn plugin_auto_update(state: St<'_>, window: WebviewWindow, enabled: bool) -
 
 #[tauri::command]
 pub fn balance_refresh(state: St<'_>, window: WebviewWindow) -> Value {
-    if !ensure_main(&window).is_ok() {
+    if ensure_origin(&state, &window).is_err() {
         if let Ok(c) = state.balance_cache.lock() {
             return c.clone().unwrap_or(Value::Null);
         }
@@ -469,7 +522,7 @@ pub fn balance_refresh(state: St<'_>, window: WebviewWindow) -> Value {
 
 #[tauri::command]
 pub fn balance_prices_get(state: St<'_>, window: WebviewWindow, model: Option<String>) -> Value {
-    if ensure_main(&window).is_err() {
+    if ensure_origin(&state, &window).is_err() {
         return json!({"ok": false, "error": "unauthorized"});
     }
     let sc = match state.sidecar() {
@@ -496,7 +549,10 @@ pub fn balance_prices_set(
         Ok(s) => s,
         Err(e) => return json!({"ok": false, "error": e}),
     };
-    let r = sc.call("balance.pricesSet", json!({"model": model, "prices": prices}));
+    let r = sc.call(
+        "balance.pricesSet",
+        json!({"model": model, "prices": prices}),
+    );
     // 保存后立即重推余额数据（dock 费用估算即时生效）。
     let st = state.inner().clone();
     std::thread::spawn(move || {
@@ -530,13 +586,12 @@ pub fn balance_prices_reset(state: St<'_>, window: WebviewWindow, model: Option<
 
 #[tauri::command]
 pub fn open_external(state: St<'_>, window: WebviewWindow, url: String) -> Value {
-    if ensure_main(&window).is_err() {
+    if ensure_origin(&state, &window).is_err() {
         return json!({"ok": false, "error": "forbidden"});
     }
-    if !url.starts_with("http://") && !url.starts_with("https://") {
+    let Some(url) = normalized_external_url(&url) else {
         return json!({"ok": false, "error": "invalid url"});
-    }
-    let _ = state;
+    };
     open_url_external(&url);
     json!({"ok": true})
 }
@@ -547,11 +602,11 @@ pub fn open_external(state: St<'_>, window: WebviewWindow, url: String) -> Value
 
 #[tauri::command]
 pub fn recovery_state(state: St<'_>, window: WebviewWindow) -> Value {
-    if ensure_main(&window).is_err() {
+    if ensure_origin(&state, &window).is_err() {
         return Value::Null;
     }
     json!({
-        "appVersion": state.paths.version,
+        "appVersion": crate::DISPLAY_RELEASE,
         "logsDir": state.paths.logs_dir.display().to_string(),
         "crashDumpsDir": local_app_data_crash_dumps(),
         "state": state.recovery.state_of(),
@@ -560,13 +615,18 @@ pub fn recovery_state(state: St<'_>, window: WebviewWindow) -> Value {
 
 fn local_app_data_crash_dumps() -> String {
     std::env::var("LOCALAPPDATA")
-        .map(|l| std::path::PathBuf::from(l).join("CrashDumps").to_string_lossy().to_string())
+        .map(|l| {
+            std::path::PathBuf::from(l)
+                .join("CrashDumps")
+                .to_string_lossy()
+                .to_string()
+        })
         .unwrap_or_default()
 }
 
 #[tauri::command]
 pub fn recovery_reload(app: AppHandle, state: St<'_>, window: WebviewWindow) -> Value {
-    if ensure_main(&window).is_err() {
+    if ensure_origin(&state, &window).is_err() {
         return json!({"ok": false, "error": "unauthorized"});
     }
     // 服务进程已退出时先重启服务（可能换新端口），再恢复加载。
@@ -584,7 +644,7 @@ pub fn recovery_reload(app: AppHandle, state: St<'_>, window: WebviewWindow) -> 
 
 #[tauri::command]
 pub fn recovery_restart(app: AppHandle, state: St<'_>, window: WebviewWindow) -> Value {
-    if ensure_main(&window).is_err() {
+    if ensure_origin(&state, &window).is_err() {
         return json!({"ok": false, "error": "unauthorized"});
     }
     state.log.log("recovery", "用户在恢复页面选择重启客户端");
@@ -607,7 +667,7 @@ pub fn recovery_restart(app: AppHandle, state: St<'_>, window: WebviewWindow) ->
 
 #[tauri::command]
 pub fn recovery_open_logs(state: St<'_>, window: WebviewWindow) -> Value {
-    if ensure_main(&window).is_err() {
+    if ensure_origin(&state, &window).is_err() {
         return json!({"ok": false, "error": "unauthorized"});
     }
     open_path_explorer(&state.paths.logs_dir.to_string_lossy());
@@ -624,12 +684,24 @@ pub fn base64_lite_encode(data: &[u8]) -> String {
     const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
     for chunk in data.chunks(3) {
-        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
         let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | b[2] as u32;
         out.push(TABLE[(n >> 18) as usize & 63] as char);
         out.push(TABLE[(n >> 12) as usize & 63] as char);
-        out.push(if chunk.len() > 1 { TABLE[(n >> 6) as usize & 63] as char } else { '=' });
-        out.push(if chunk.len() > 2 { TABLE[n as usize & 63] as char } else { '=' });
+        out.push(if chunk.len() > 1 {
+            TABLE[(n >> 6) as usize & 63] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            TABLE[n as usize & 63] as char
+        } else {
+            '='
+        });
     }
     out
 }

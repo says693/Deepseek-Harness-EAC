@@ -14,7 +14,7 @@ pub struct Paths {
     pub user_data: PathBuf,
     /// 日志目录。
     pub logs_dir: PathBuf,
-    /// DSH_HOME（env 显式覆盖优先，否则 ~/.dsh-v4lite）。
+    /// DSH_HOME（env 显式覆盖优先，否则使用本产品独立数据目录）。
     pub dsh_home: PathBuf,
     pub packaged: bool,
     pub version: String,
@@ -50,13 +50,17 @@ impl Paths {
         let npm_cli = if packaged {
             res.join("npm").join("bin").join("npm-cli.js")
         } else {
-            app_root.join("vendor").join("npm").join("bin").join("npm-cli.js")
+            app_root
+                .join("vendor")
+                .join("npm")
+                .join("bin")
+                .join("npm-cli.js")
         };
-        // v4Lite 独立数据主目录：绝不触碰原版 EAC / dsh CLI 的 ~\.dsh。
-        // 显式设置环境变量 DSH_HOME 可覆盖此默认（尊重用户的强制指定）。
+        // AIO 发行版使用自己的 appData 子目录，既不读取也不改写
+        // 当前运行的 v4Lite ~/.dsh-v4lite。显式 DSH_HOME 仍供自动化验证覆盖。
         let dsh_home = match std::env::var("DSH_HOME") {
             Ok(v) if !v.trim().is_empty() => PathBuf::from(v),
-            _ => dirs_home().map(|h| h.join(".dsh-v4lite")).unwrap_or_else(|| app_data_dir.join(".dsh-home")),
+            _ => app_data_dir.join("dsh-home"),
         };
         // 测试/自动化可整体重定位 userData（对齐 Electron 版 DSH_DESKTOP_USERDATA）。
         let user_data = match std::env::var("DSH_DESKTOP_USERDATA") {
@@ -126,14 +130,54 @@ impl Paths {
     pub fn koffi_overlay_file(&self) -> PathBuf {
         self.user_data.join("picker-browse.overlay.yml")
     }
+
+    /// Copy the packaged current-profile snapshot on first launch. The copy is
+    /// intentionally one-shot so later user changes are never overwritten.
+    pub fn seed_distribution_profile(&self) -> Result<bool, String> {
+        let seed = self
+            .app_root
+            .parent()
+            .ok_or_else(|| "resource root is unavailable".to_string())?
+            .join("profile-seed");
+        if !seed.exists() || self.desktop_profile_dir().join("node_modules").exists() {
+            return Ok(false);
+        }
+        copy_tree(&seed, &self.dsh_home)?;
+        Ok(true)
+    }
 }
 
 pub const DESKTOP_PROFILE: &str = "web-desktop";
 /// 与官方 web profile 出厂模板一致（@deepseek-ai/dsh-base + dsh-web-app）。
-pub const DESKTOP_PROFILE_BUNDLES: [&str; 2] = ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app"];
+pub const DESKTOP_PROFILE_BUNDLES: [&str; 2] =
+    ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app"];
 
 pub fn dirs_home() -> Option<PathBuf> {
     std::env::var("USERPROFILE").ok().map(PathBuf::from)
+}
+
+fn copy_tree(source: &std::path::Path, destination: &std::path::Path) -> Result<(), String> {
+    std::fs::create_dir_all(destination)
+        .map_err(|e| format!("create {}: {e}", destination.display()))?;
+    for entry in std::fs::read_dir(source).map_err(|e| format!("read {}: {e}", source.display()))? {
+        let entry = entry.map_err(|e| format!("read entry in {}: {e}", source.display()))?;
+        let src = entry.path();
+        let dst = destination.join(entry.file_name());
+        let kind = entry
+            .file_type()
+            .map_err(|e| format!("inspect {}: {e}", src.display()))?;
+        if kind.is_dir() {
+            copy_tree(&src, &dst)?;
+        } else if kind.is_file() {
+            if let Some(parent) = dst.parent() {
+                std::fs::create_dir_all(parent)
+                    .map_err(|e| format!("create {}: {e}", parent.display()))?;
+            }
+            std::fs::copy(&src, &dst)
+                .map_err(|e| format!("copy {} -> {}: {e}", src.display(), dst.display()))?;
+        }
+    }
+    Ok(())
 }
 
 /// 剥掉 Windows verbatim 前缀（\\?\ 与 \\?\UNC\）。

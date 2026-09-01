@@ -5,7 +5,7 @@ use crate::paths::Paths;
 use crate::recovery::Recovery;
 use crate::service::ServiceHandle;
 use crate::sidecar::Sidecar;
-use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use tauri::AppHandle;
 
@@ -23,7 +23,6 @@ pub struct AppState {
     pub balance_cache: Mutex<Option<serde_json::Value>>,
     /// koffi 预检失败时注入的目录选择器降级 overlay 路径。
     pub picker_overlay: Mutex<Option<String>>,
-    pub preview_port: AtomicU16,
     pub tray_ready: AtomicBool,
     /// junction 修复通知只发一次。
     pub junction_notified: AtomicBool,
@@ -46,7 +45,6 @@ impl AppState {
             recovery: Recovery::new(),
             balance_cache: Mutex::new(None),
             picker_overlay: Mutex::new(None),
-            preview_port: AtomicU16::new(0),
             tray_ready: AtomicBool::new(false),
             junction_notified: AtomicBool::new(false),
             app: OnceLock::new(),
@@ -80,7 +78,9 @@ impl AppState {
     pub fn service_running(&self) -> bool {
         match self.service.lock() {
             Ok(g) => match g.as_ref() {
-                Some(h) => !h.exited.load(Ordering::SeqCst) && !h.intentional.load(Ordering::SeqCst),
+                Some(h) => {
+                    !h.exited.load(Ordering::SeqCst) && !h.intentional.load(Ordering::SeqCst)
+                }
                 None => false,
             },
             Err(_) => false,
