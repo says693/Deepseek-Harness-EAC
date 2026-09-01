@@ -126,11 +126,12 @@ test('壳层：被移除的模块/脚本/调试文件不存在', () => {
   }
 });
 
-test('壳层：内置 skills 目录为空（eac-desktop-tips 已移除）', () => {
-  const dir = join(root, 'assets', 'skills');
-  assert.ok(existsSync(dir), 'assets/skills 目录应保留');
-  const entries = readdirSync(dir, { withFileTypes: true });
-  assert.deepEqual(entries.map((e) => e.name), []);
+test('壳层：不再分发旧 assets/skills；AIO 技能只来自脱敏 profile seed', () => {
+  assert.ok(!existsSync(join(root, 'assets', 'skills')), '旧 assets/skills 不应残留');
+  assert.ok(
+    existsSync(join(root, 'distribution', 'profile-seed', 'profiles', 'web-desktop', 'node_modules', 'dsh-usage-skill', 'package.json')),
+    'AIO profile seed 应包含声明的 dsh-usage-skill',
+  );
 });
 
 test('测试：已移除功能的测试文件不存在', () => {
@@ -139,12 +140,13 @@ test('测试：已移除功能的测试文件不存在', () => {
   }
 });
 
-test('打包：electron-builder.yml 仅 Windows x64、不再打包已移除模块、命名 v4Lite', () => {
+test('打包：electron-builder.yml 仅 Windows x64、不再打包已移除模块、命名 AIO v1', () => {
   const yml = read('electron-builder.yml');
   assert.ok(!yml.includes('client-updater.js'));
   assert.ok(!yml.includes('session-watcher.js'));
-  assert.ok(yml.includes('productName: Deepseek Harness EAC v4Lite'));
-  assert.ok(yml.includes('appId: com.deepseek.dsh.desktop.lite'));
+  assert.ok(yml.includes('productName: DSHEAC AIO'));
+  assert.ok(yml.includes('appId: com.deepseek.dsh.desktop.aio'));
+  assert.ok(yml.includes('artifactName: DSHEAC-AIO-v1-Setup-${arch}.${ext}'));
   const winArch = yml.match(/win:\s*\r?\n(?:  [^\n]*\r?\n)*?    -\s*target: (\w+)\s*\r?\n\s*arch:\s*\r?\n\s*-\s*(\w+)/);
   assert.ok(winArch, 'win 目标应显式声明 arch');
   assert.equal(winArch[2], 'x64');
@@ -152,10 +154,11 @@ test('打包：electron-builder.yml 仅 Windows x64、不再打包已移除模�
   assert.ok(!yml.includes('mac'));
 });
 
-test('打包：package.json 命名 v4Lite、无客户端自更新脚本', () => {
+test('打包：package.json 使用 AIO v1 发布标识、无客户端自更新脚本', () => {
   const pkg = JSON.parse(read('package.json'));
-  assert.equal(pkg.name, 'dsh-desktop-lite');
-  assert.equal(pkg.productName, 'Deepseek Harness EAC v4Lite');
+  assert.equal(pkg.name, 'dsh-desktop-aio');
+  assert.equal(pkg.productName, 'DSHEAC AIO');
+  assert.equal(pkg.version, '1.0.0');
   assert.ok(!JSON.stringify(pkg.scripts).includes('client-update'));
   assert.ok(!JSON.stringify(pkg.scripts).includes('check-client-latest'));
 });
