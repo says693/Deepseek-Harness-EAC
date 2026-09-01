@@ -1,0 +1,93 @@
+# 构建 DSHEAC AIO v1
+
+## 支持范围
+
+- Windows 10/11 x64
+- PowerShell 5.1+
+- Node.js / npm（仅构建机）
+- Rust stable + MSVC x64 工具链
+- Windows SDK 与 Visual Studio C++ Build Tools
+- 可访问 npm、Cargo 与 Tauri/NSIS/WebView2 构建资源的网络环境；依赖已缓存时可部分离线
+
+版型为 `AIO`（All-in-One），用户可见版本为 `v1`，内部 SemVer 为 `1.0.0`。
+
+## 一键发布构建
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build\Build-Release.ps1
+```
+
+主要步骤：
+
+1. 校验 `SOURCE_BASELINE.txt` 或 Git commit；
+2. 结构化脱敏 `distribution/profile-seed`；
+3. `npm ci` 安装锁定的 Tauri JS 工具链；
+4. sidecar TypeScript 类型检查与编译；
+5. staging 生产依赖、Node/npm、assets 与 profile seed；
+6. 在 staging 中裁剪 `.map`、`.pdb`、`win32-arm64`、`win10-arm64`；
+7. 串行运行全部重构版 JavaScript 测试；
+8. `cargo test --locked`；
+9. Tauri/NSIS 打包；
+10. 生成源码归档、构建元数据和 SHA-256 清单并复核。
+
+## 产物
+
+```text
+dist/
+├── DSHEAC-AIO-v1-Setup-x64.exe
+├── DSHEAC-AIO-v1-Source.zip
+└── SHA256SUMS.txt
+
+verification/
+└── build-metadata.json
+```
+
+源码归档不包含：
+
+- `.git`；
+- `tauri-app/target`；
+- `tauri-app/resources` staging；
+- 本地插件 `dist` 目录中的预构建安装器；
+- 本地插件 source map。
+
+这些排除项不属于构建输入，能显著降低源码包体积和解压时间。
+
+## 安装 E2E
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build\Verify-Installer.ps1
+```
+
+可调超时：
+
+```powershell
+.\build\Verify-Installer.ps1 `
+  -InstallTimeoutSeconds 300 `
+  -StartupTimeoutSeconds 240 `
+  -UninstallTimeoutSeconds 180
+```
+
+验证报告无论 PASS/FAIL 都会写入 `verification/verification-*.json`。
+
+## 手工开发检查
+
+```powershell
+npm.cmd --prefix .\source\native-v4.5-lite\tauri-app ci
+npm.cmd --prefix .\source\native-v4.5-lite\tauri-app run sidecar:check
+npm.cmd --prefix .\source\native-v4.5-lite\tauri-app run sidecar:build
+.\source\native-v4.5-lite\vendor\node\node.exe `
+  .\source\native-v4.5-lite\tauri-app\scripts\stage.ts
+cargo test --locked --manifest-path `
+  .\source\native-v4.5-lite\tauri-app\Cargo.toml
+```
+
+## 可复现性边界
+
+依赖版本由 npm lockfile 与 Cargo.lock 约束，但以下输入仍可能导致字节级安装包不同：
+
+- Rust/LLVM/MSVC/Windows SDK 版本；
+- Tauri 下载的 NSIS 与 WebView2 离线安装器版本；
+- PE/NSIS 时间戳；
+- 未固定哈希的预置 Node/npm/profile seed 二进制树。
+
+因此当前目标是“功能与 payload 可重建”，不是尚未证明的字节级 reproducible build。发布者应记录工具链版本，并在独立目录重复构建后比较 staging manifest。
