@@ -46,7 +46,7 @@
     const version = (opts && opts.version) || '';
     const kind = opts && opts.kind === 'client' ? 'client' : 'agent';
     document.getElementById('title').textContent = kind === 'client'
-      ? '正在下载 Deepseek Harness EAC 封装 v' + version + ' …'
+      ? '正在下载 DSHEAC AIO v' + version + ' …'
       : '正在更新 @deepseek-ai/dsh → ' + version;
     document.getElementById('note').textContent = kind === 'client'
       ? '从上游仓库下载新版本客户端，完成后自动替换并重启应用。'

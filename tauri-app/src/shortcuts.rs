@@ -15,7 +15,7 @@ use std::process::Command;
 
 /// 图标设计版本：更换图标时 +1，触发所有快捷方式图标刷新。
 const SHORTCUT_ICON_VERSION: &str = "whale-2";
-const APP_TITLE: &str = "Deepseek Harness EAC v4Lite";
+const APP_TITLE: &str = "DSHEAC AIO";
 
 fn ps(script: &str) -> Option<String> {
     let mut cmd = Command::new("powershell");
@@ -57,7 +57,10 @@ fn read_lnk_icon(lnk: &Path) -> Option<String> {
 
 fn write_lnk(lnk: &Path, target: &Path, description: &str, icon: Option<&Path>) -> bool {
     let icon_line = match icon {
-        Some(ico) => format!("$s.IconLocation = {}; ", ps_quote(&format!("{},0", ico.display()))),
+        Some(ico) => format!(
+            "$s.IconLocation = {}; ",
+            ps_quote(&format!("{},0", ico.display()))
+        ),
         None => String::new(),
     };
     ps(&format!(
@@ -117,8 +120,9 @@ fn shortcut_icon_path(paths: &Paths, log: &Logger) -> Option<PathBuf> {
         return None;
     }
     let dst = paths.user_data.join("icon.ico");
-    let ok = if !dst.exists() || std::fs::metadata(&src).map(|m| m.len()).unwrap_or(0)
-        != std::fs::metadata(&dst).map(|m| m.len()).unwrap_or(1)
+    let ok = if !dst.exists()
+        || std::fs::metadata(&src).map(|m| m.len()).unwrap_or(0)
+            != std::fs::metadata(&dst).map(|m| m.len()).unwrap_or(1)
     {
         std::fs::copy(&src, &dst).is_ok()
     } else {
@@ -151,22 +155,39 @@ pub fn maintain_shortcuts(paths: &Paths, log: &Logger) {
     } else {
         "auto"
     };
-    let appdata = std::env::var("APPDATA").map(PathBuf::from).unwrap_or_default();
-    let links_dir = appdata.join("Microsoft").join("Windows").join("Start Menu").join("Programs");
+    let appdata = std::env::var("APPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_default();
+    let links_dir = appdata
+        .join("Microsoft")
+        .join("Windows")
+        .join("Start Menu")
+        .join("Programs");
     let desktop_dir = dirs_desktop();
     let start_menu = links_dir.join(format!("{}.lnk", APP_TITLE));
     let desktop = desktop_dir.join(format!("{}.lnk", APP_TITLE));
-    let Some(ico) = shortcut_icon_path(paths, log) else { return };
+    let Some(ico) = shortcut_icon_path(paths, log) else {
+        return;
+    };
 
     // 清理旧名称（DSH Desktop）快捷方式：改名后它们指向的 exe 已不存在。
-    for legacy in [links_dir.join("DSH Desktop.lnk"), desktop_dir.join("DSH Desktop.lnk")] {
+    for legacy in [
+        links_dir.join("DSH Desktop.lnk"),
+        desktop_dir.join("DSH Desktop.lnk"),
+    ] {
         if legacy.exists() {
             let _ = std::fs::remove_file(&legacy);
         }
     }
 
-    let prev_target = doc.get("shortcutTarget").and_then(|v| v.as_str()).unwrap_or("");
-    let prev_icon = doc.get("shortcutIcon").and_then(|v| v.as_str()).unwrap_or("");
+    let prev_target = doc
+        .get("shortcutTarget")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let prev_icon = doc
+        .get("shortcutIcon")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     let target_moved = !prev_target.is_empty() && !same_path(prev_target, &exe);
     let icon_outdated = prev_icon != SHORTCUT_ICON_VERSION;
     let mut changed = false;
@@ -175,7 +196,9 @@ pub fn maintain_shortcuts(paths: &Paths, log: &Logger) {
         let is_ours = |p: &Path| {
             p.exists()
                 && (lnk_targets_app(p, &[&exe])
-                    || (target_moved && !prev_target.is_empty() && lnk_targets_app(p, &[Path::new(prev_target)])))
+                    || (target_moved
+                        && !prev_target.is_empty()
+                        && lnk_targets_app(p, &[Path::new(prev_target)])))
         };
         let mut candidates = vec![start_menu.clone()];
         if policy != "never" {
@@ -190,7 +213,12 @@ pub fn maintain_shortcuts(paths: &Paths, log: &Logger) {
             if !target_moved && !lnk_uses_managed_icon(&p, &ico) {
                 continue;
             }
-            if write_lnk(&p, &exe, "DeepSeek Harness 桌面客户端（v4Lite）", Some(&ico)) {
+            if write_lnk(
+                &p,
+                &exe,
+                "DSHEAC AIO v1",
+                Some(&ico),
+            ) {
                 changed = true;
             }
         }
@@ -198,25 +226,48 @@ pub fn maintain_shortcuts(paths: &Paths, log: &Logger) {
 
     // 开始菜单快捷方式：系统通知（Toast）的前置条件，按 target 匹配维护。
     let start_menu_ok = start_menu.exists() && lnk_targets_app(&start_menu, &[&exe]);
-    if !start_menu_ok && write_lnk(&start_menu, &exe, "DeepSeek Harness 桌面客户端（v4Lite）", Some(&ico)) {
+    if !start_menu_ok
+        && write_lnk(
+            &start_menu,
+            &exe,
+            "DSHEAC AIO v1",
+            Some(&ico),
+        )
+    {
         changed = true;
     }
     // 桌面快捷方式：已有任意名称指向本应用的 .lnk 即不再新建。
     if policy != "never" && !desktop.exists() {
-        let has_ours = list_lnk_files(&desktop_dir).iter().any(|p| lnk_targets_app(p, &[&exe]));
+        let has_ours = list_lnk_files(&desktop_dir)
+            .iter()
+            .any(|p| lnk_targets_app(p, &[&exe]));
         if !has_ours {
-            if write_lnk(&desktop, &exe, "DeepSeek Harness 桌面客户端（v4Lite）", Some(&ico)) {
+            if write_lnk(
+                &desktop,
+                &exe,
+                "DSHEAC AIO v1",
+                Some(&ico),
+            ) {
                 changed = true;
             }
         } else {
-            log.log("boot", "检测到用户自定义的桌面快捷方式（指向本应用），不再重复创建");
+            log.log(
+                "boot",
+                "检测到用户自定义的桌面快捷方式（指向本应用），不再重复创建",
+            );
         }
     }
     if changed {
         let mut next = doc.clone();
         if let Some(obj) = next.as_object_mut() {
-            obj.insert("shortcutTarget".into(), Value::String(exe.to_string_lossy().to_string()));
-            obj.insert("shortcutIcon".into(), Value::String(SHORTCUT_ICON_VERSION.into()));
+            obj.insert(
+                "shortcutTarget".into(),
+                Value::String(exe.to_string_lossy().to_string()),
+            );
+            obj.insert(
+                "shortcutIcon".into(),
+                Value::String(SHORTCUT_ICON_VERSION.into()),
+            );
         }
         let _ = settings::save_at(&settings_file, &next);
         log.log(
@@ -237,6 +288,8 @@ fn dirs_desktop() -> PathBuf {
             return PathBuf::from(out);
         }
     }
-    let home = std::env::var("USERPROFILE").map(PathBuf::from).unwrap_or_default();
+    let home = std::env::var("USERPROFILE")
+        .map(PathBuf::from)
+        .unwrap_or_default();
     home.join("Desktop")
 }
