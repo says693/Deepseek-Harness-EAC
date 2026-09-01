@@ -205,6 +205,11 @@
   function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   }
+  function displayVersion(value) {
+    const version = String(value == null ? "" : value).trim();
+    if (!version) return "";
+    return /^v/i.test(version) ? version : `v${version}`;
+  }
   function renderMenu() {
     if (!menuEl) return;
     menuEl.innerHTML = `
@@ -319,7 +324,7 @@
       if (!info) return;
       state = { ...state, ...info };
       if (info.appVersion) {
-        badge.textContent = "v" + info.appVersion;
+        badge.textContent = displayVersion(info.appVersion);
         badge.hidden = false;
       }
       if (info.agentVersion) badge.title = "agent v" + info.agentVersion + "\uFF08" + info.agentSource + "\uFF09";

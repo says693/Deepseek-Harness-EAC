@@ -227,6 +227,12 @@ function esc(s: unknown): string {
   return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
 }
 
+function displayVersion(value: unknown): string {
+  const version = String(value == null ? '' : value).trim();
+  if (!version) return '';
+  return /^v/i.test(version) ? version : `v${version}`;
+}
+
 function renderMenu() {
   if (!menuEl) return;
   menuEl.innerHTML = `
@@ -349,7 +355,7 @@ function injectChrome() {
     if (!info) return;
     state = { ...state, ...info };
     if (info.appVersion) {
-      badge.textContent = 'v' + info.appVersion;
+      badge.textContent = displayVersion(info.appVersion);
       badge.hidden = false;
     }
     if (info.agentVersion) badge.title = 'agent v' + info.agentVersion + '（' + info.agentSource + '）';

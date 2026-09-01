@@ -22,6 +22,29 @@ test('portable marker selects an isolated data root in the Rust shell', () => {
   assert.match(paths, /portable_marker_selects_sibling_data_root/);
 });
 
+test('AIO chrome preserves an existing v prefix', () => {
+  const chrome = read('tauri-app/frontend/chrome.ts');
+  assert.match(chrome, /\^v\/i\.test\(version\) \? version : `v\$\{version\}`/);
+  assert.match(chrome, /badge\.textContent = displayVersion\(info\.appVersion\)/);
+  assert.ok(!chrome.includes("badge.textContent = 'v' + info.appVersion"));
+});
+
+test('AIO remains isolated from every legacy product by default', () => {
+  const conf = JSON.parse(read('tauri-app/tauri.conf.json'));
+  const paths = read('tauri-app/src/paths.rs');
+  const migrate = read('tauri-app/src/ve_migrate.rs');
+  const nsh = read('tauri-app/nsis/installer-hooks.nsh');
+  const electron = read('main.js');
+  assert.equal(conf.identifier, 'com.deepseek.dsh.desktop.aio');
+  assert.match(paths, /user_data\.join\("dsh-home"\)/);
+  assert.match(migrate, /DSH_AIO_IMPORT_LEGACY/);
+  assert.match(migrate, /!= Ok\("1"\)/);
+  assert.match(nsh, /taskkill \/F \/T \/IM "DSHEAC AIO\.exe"/);
+  assert.ok(!/taskkill[^\n]+v4Lite/i.test(nsh));
+  assert.match(electron, /\.dsh-aio/);
+  assert.match(electron, /com\.deepseek\.dsh\.desktop\.aio/);
+});
+
 test('AIO update smoke rejects client self-update exposure', () => {
   const smoke = read('update-smoke.js');
   assert.match(smoke, /client auto-update scripts/);
