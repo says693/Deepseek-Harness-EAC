@@ -83,10 +83,18 @@ pub struct VerifyResult {
 /// 文件数下降都算受损；多出的文件容忍（只有丢失会破坏模块解析）。
 pub fn verify_bundle(nm_root: &Path, manifest: Option<&Value>) -> VerifyResult {
     let Some(manifest) = manifest else {
-        return VerifyResult { ok: true, skipped: true, damaged: vec![] };
+        return VerifyResult {
+            ok: true,
+            skipped: true,
+            damaged: vec![],
+        };
     };
     let Some(packages) = manifest.get("packages").and_then(|p| p.as_object()) else {
-        return VerifyResult { ok: true, skipped: true, damaged: vec![] };
+        return VerifyResult {
+            ok: true,
+            skipped: true,
+            damaged: vec![],
+        };
     };
     let mut damaged = Vec::new();
     for (name, meta) in packages {
@@ -96,7 +104,12 @@ pub fn verify_bundle(nm_root: &Path, manifest: Option<&Value>) -> VerifyResult {
             pkg_dir.push(seg);
         }
         if !pkg_dir.exists() {
-            damaged.push(Damage { name: name.clone(), reason: "missing".into(), expected, actual: 0 });
+            damaged.push(Damage {
+                name: name.clone(),
+                reason: "missing".into(),
+                expected,
+                actual: 0,
+            });
             continue;
         }
         if !pkg_dir.join("package.json").exists() {
@@ -110,10 +123,19 @@ pub fn verify_bundle(nm_root: &Path, manifest: Option<&Value>) -> VerifyResult {
         }
         let actual = count_files(&pkg_dir);
         if actual < expected {
-            damaged.push(Damage { name: name.clone(), reason: "files lost".into(), expected, actual });
+            damaged.push(Damage {
+                name: name.clone(),
+                reason: "files lost".into(),
+                expected,
+                actual,
+            });
         }
     }
-    VerifyResult { ok: damaged.is_empty(), skipped: false, damaged }
+    VerifyResult {
+        ok: damaged.is_empty(),
+        skipped: false,
+        damaged,
+    }
 }
 
 #[cfg(test)]
@@ -143,8 +165,14 @@ mod tests {
         std::fs::remove_file(nm.join("other/package.json")).unwrap();
         let r2 = verify_bundle(&nm, Some(&manifest));
         assert!(!r2.ok);
-        assert!(r2.damaged.iter().any(|d| d.name == "@scope/pkg" && d.reason == "files lost"));
-        assert!(r2.damaged.iter().any(|d| d.name == "other" && d.reason.contains("skeleton")));
+        assert!(r2
+            .damaged
+            .iter()
+            .any(|d| d.name == "@scope/pkg" && d.reason == "files lost"));
+        assert!(r2
+            .damaged
+            .iter()
+            .any(|d| d.name == "other" && d.reason.contains("skeleton")));
 
         let _ = std::fs::remove_dir_all(&base);
     }
