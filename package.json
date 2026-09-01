@@ -1,8 +1,8 @@
 {
-  "name": "dsh-desktop-lite",
-  "productName": "Deepseek Harness EAC v4Lite",
-  "version": "4.5.0",
-  "description": "DeepSeek Harness (dsh) 开箱即用的 Windows 桌面客户端（v4Lite 精简版）：内置 dsh CLI 与 Node 运行时，一键启动 Web UI",
+  "name": "dsh-desktop-aio",
+  "productName": "DSHEAC AIO",
+  "version": "1.0.0",
+  "description": "DSHEAC AIO v1（All-in-One）：整合 dsh CLI、Node 运行时、插件与技能快照的 Windows x64 发行版。",
   "main": "main.js",
   "author": "DSH Desktop",
   "license": "MIT",
