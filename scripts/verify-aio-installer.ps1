@@ -84,6 +84,12 @@ function Test-ProcessInTree([int]$CandidatePid, [int]$RootPid) {
     return $false
 }
 
+function Get-OptionalProperty($Object, [string]$Name) {
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property) { return $null }
+    return $property.Value
+}
+
 function Get-AioUninstallEntries {
     $roots = @(
         'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
@@ -94,12 +100,14 @@ function Get-AioUninstallEntries {
         if (-not (Test-Path -LiteralPath $root)) { continue }
         foreach ($key in Get-ChildItem -LiteralPath $root -ErrorAction SilentlyContinue) {
             $item = Get-ItemProperty -LiteralPath $key.PSPath -ErrorAction SilentlyContinue
-            if ($null -ne $item -and ($item.DisplayName -eq 'DSHEAC AIO' -or $item.DisplayName -eq 'DSHEAC AIO v1')) {
+            if ($null -eq $item) { continue }
+            $displayName = Get-OptionalProperty $item 'DisplayName'
+            if ($displayName -eq 'DSHEAC AIO' -or $displayName -eq 'DSHEAC AIO v1') {
                 $entries += [pscustomobject]@{
                     key = $key.Name
-                    displayName = $item.DisplayName
-                    installLocation = $item.InstallLocation
-                    uninstallString = $item.UninstallString
+                    displayName = $displayName
+                    installLocation = Get-OptionalProperty $item 'InstallLocation'
+                    uninstallString = Get-OptionalProperty $item 'UninstallString'
                 }
             }
         }
@@ -159,8 +167,11 @@ try {
     $payloadMeasure = Get-ChildItem -LiteralPath $installRoot -Recurse -File -Force | Measure-Object Length -Sum
     $registryEntries = @(Get-AioUninstallEntries)
     if ($registryEntries.Count -eq 0) { throw 'AIO uninstall registry entry was not created.' }
+    $expectedInstallLocation = [IO.Path]::GetFullPath($installRoot).TrimEnd('\')
     $foreignRegistryEntry = @($registryEntries | Where-Object {
-        $_.installLocation -and -not ([IO.Path]::GetFullPath($_.installLocation).TrimEnd('\') -eq [IO.Path]::GetFullPath($installRoot).TrimEnd('\'))
+        if (-not $_.installLocation) { return $true }
+        $actual = [IO.Path]::GetFullPath(([string]$_.installLocation).Trim('"')).TrimEnd('\')
+        return -not [string]::Equals($actual, $expectedInstallLocation, [StringComparison]::OrdinalIgnoreCase)
     })
     if ($foreignRegistryEntry.Count -gt 0) { throw 'AIO uninstall registry entry points outside the AIO install root.' }
     $report.payload = [ordered]@{
