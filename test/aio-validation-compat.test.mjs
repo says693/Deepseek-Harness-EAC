@@ -35,6 +35,7 @@ test('AIO remains isolated from every legacy product by default', () => {
   const migrate = read('tauri-app/src/ve_migrate.rs');
   const nsh = read('tauri-app/nsis/installer-hooks.nsh');
   const electron = read('main.js');
+  const shortcuts = read('tauri-app/src/shortcuts.rs');
   assert.equal(conf.identifier, 'com.deepseek.dsh.desktop.aio');
   assert.match(paths, /user_data\.join\("dsh-home"\)/);
   assert.match(migrate, /DSH_AIO_IMPORT_LEGACY/);
@@ -43,6 +44,17 @@ test('AIO remains isolated from every legacy product by default', () => {
   assert.ok(!/taskkill[^\n]+v4Lite/i.test(nsh));
   assert.match(electron, /\.dsh-aio/);
   assert.match(electron, /com\.deepseek\.dsh\.desktop\.aio/);
+  assert.ok(!shortcuts.includes('DSH Desktop.lnk'), 'AIO must not delete another product shortcut by name');
+  assert.match(shortcuts, /lnk_targets_app/, 'shortcut maintenance must verify TargetPath ownership');
+});
+
+test('AIO has one default Tauri release entrypoint', () => {
+  const pkg = JSON.parse(read('package.json'));
+  assert.match(pkg.scripts.start, /tauri-app/);
+  assert.match(pkg.scripts.pack, /tauri-app/);
+  assert.match(pkg.scripts.dist, /build-aio-release\.ps1/);
+  assert.ok(pkg.scripts['legacy:electron:dist'], 'legacy Electron packaging must require an explicit command');
+  assert.ok(fs.existsSync(path.join(root, 'scripts', 'verify-aio-installer.ps1')));
 });
 
 test('AIO update smoke rejects client self-update exposure', () => {

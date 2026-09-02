@@ -95,9 +95,20 @@ fn list_lnk_files(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
+fn is_managed_target(target: &str, current: &Path, previous: Option<&Path>) -> bool {
+    same_path(target, current)
+        || previous.map(|path| same_path(target, path)).unwrap_or(false)
+}
+
 fn lnk_targets_app(lnk: &Path, targets: &[&Path]) -> bool {
     read_lnk_target(lnk)
         .map(|t| targets.iter().any(|x| same_path(&t, x)))
+        .unwrap_or(false)
+}
+
+fn lnk_targets_managed(lnk: &Path, current: &Path, previous: Option<&Path>) -> bool {
+    read_lnk_target(lnk)
+        .map(|target| is_managed_target(&target, current, previous))
         .unwrap_or(false)
 }
 
@@ -170,15 +181,8 @@ pub fn maintain_shortcuts(paths: &Paths, log: &Logger) {
         return;
     };
 
-    // 清理旧名称（DSH Desktop）快捷方式：改名后它们指向的 exe 已不存在。
-    for legacy in [
-        links_dir.join("DSH Desktop.lnk"),
-        desktop_dir.join("DSH Desktop.lnk"),
-    ] {
-        if legacy.exists() {
-            let _ = std::fs::remove_file(&legacy);
-        }
-    }
+    // 不按文件名接管或删除任何其他产品快捷方式。只有 TargetPath 明确
+    // 指向当前 AIO EXE（或本产品 settings 中记录的上一 AIO 目标）才维护。
 
     let prev_target = doc
         .get("shortcutTarget")
@@ -193,13 +197,12 @@ pub fn maintain_shortcuts(paths: &Paths, log: &Logger) {
     let mut changed = false;
 
     if target_moved || icon_outdated {
-        let is_ours = |p: &Path| {
-            p.exists()
-                && (lnk_targets_app(p, &[&exe])
-                    || (target_moved
-                        && !prev_target.is_empty()
-                        && lnk_targets_app(p, &[Path::new(prev_target)])))
+        let previous = if target_moved && !prev_target.is_empty() {
+            Some(Path::new(prev_target))
+        } else {
+            None
         };
+        let is_ours = |p: &Path| p.exists() && lnk_targets_managed(p, &exe, previous);
         let mut candidates = vec![start_menu.clone()];
         if policy != "never" {
             candidates.extend(list_lnk_files(&desktop_dir));
@@ -278,6 +281,21 @@ pub fn maintain_shortcuts(paths: &Paths, log: &Logger) {
                 SHORTCUT_ICON_VERSION
             ),
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shortcut_ownership_never_claims_another_product() {
+        let current = Path::new(r"C:\Apps\DSHEAC AIO\DSHEAC AIO.exe");
+        let previous = Path::new(r"D:\Portable\DSHEAC AIO.exe");
+        assert!(is_managed_target(r"C:\Apps\DSHEAC AIO\DSHEAC AIO.exe", current, Some(previous)));
+        assert!(is_managed_target(r"D:\Portable\DSHEAC AIO.exe", current, Some(previous)));
+        assert!(!is_managed_target(r"C:\Apps\DSH Desktop\DSH Desktop.exe", current, Some(previous)));
+        assert!(!is_managed_target(r"C:\Apps\Deepseek Harness EAC\Deepseek Harness EAC.exe", current, Some(previous)));
     }
 }
 
