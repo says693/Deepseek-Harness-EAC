@@ -7,7 +7,6 @@
 //!   2. 本应用 userdata（测试场景：两代共用 DSH_DESKTOP_USERDATA 重定位目录）
 
 use crate::paths::Paths;
-use crate::settings;
 use std::path::{Path, PathBuf};
 
 const MAX_EXPORT_BYTES: u64 = 5 * 1024 * 1024;
