@@ -22,7 +22,7 @@
         @{
             Name = 'aio-project-scripts'
             Domain = 'updates-packaging'
-            Pattern = '^tauri-app/scripts/.*\.(js|mjs|ts)$|^scripts/.*\.(js|mjs|cjs)$'
+            Pattern = '^tauri-app/scripts/.*\.(js|mjs|ts)$|^scripts/.*\.(js|mjs|cjs|ps1)$'
             Reference = 'references/updates-and-packaging.md'
             Level = 'full'
             Tests = @('test/aio-validation-compat.test.mjs', 'test/lite-manifest.test.mjs')
