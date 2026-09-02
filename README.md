@@ -32,7 +32,9 @@ AIO 不表示包含上游项目所有历史功能；实际功能以本仓库打�
 - 内置当前插件与技能 profile seed；
 - 离线 WebView2 安装器；
 - 独立产品标识 `com.deepseek.dsh.desktop.aio`；
-- 独立应用数据和 DSH_HOME，不修改原 v4Lite 数据。
+- 独立应用数据和 DSH_HOME，不修改原 v4Lite、旧 EAC、5.x 或 CLI 数据；
+- 旧版数据导入默认关闭，只有显式设置 `DSH_AIO_IMPORT_LEGACY=1` 才启用；
+- 正式发布入口仅为 Tauri；Electron 命令保留在 `legacy:electron:*` 命名空间，不用于 AIO Release。
 
 ## 安装
 
@@ -49,13 +51,14 @@ AIO 不表示包含上游项目所有历史功能；实际功能以本仓库打�
 详见 [BUILDING.md](BUILDING.md)。标准命令：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\build\Build-Release.ps1
+$env:DSH_PROFILE_SEED_DIR = 'D:\reviewed\profile-seed'
+npm run dist
 ```
 
 ## 安装验证
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\build\Verify-Installer.ps1
+powershell -NoProfile -File .\scripts\verify-aio-installer.ps1
 ```
 
 验证会安装到包含中文和空格的独立目录，使用隔离数据启动，确认服务端口属于本轮应用进程树，检查插件/技能 seed 与隐私排除，然后静默卸载并检查进程、端口和安装目录残留。

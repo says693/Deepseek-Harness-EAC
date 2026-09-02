@@ -14,7 +14,10 @@
 ## 一键发布构建
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\build\Build-Release.ps1
+npm ci
+npm --prefix tauri-app ci
+$env:DSH_PROFILE_SEED_DIR = 'D:\reviewed\profile-seed'
+npm run dist
 ```
 
 主要步骤：
@@ -55,13 +58,13 @@ verification/
 ## 安装 E2E
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\build\Verify-Installer.ps1
+powershell -NoProfile -File .\scripts\verify-aio-installer.ps1
 ```
 
 可调超时：
 
 ```powershell
-.\build\Verify-Installer.ps1 `
+.\scripts\verify-aio-installer.ps1 `
   -InstallTimeoutSeconds 300 `
   -StartupTimeoutSeconds 240 `
   -UninstallTimeoutSeconds 180
@@ -72,13 +75,15 @@ powershell -ExecutionPolicy Bypass -File .\build\Verify-Installer.ps1
 ## 手工开发检查
 
 ```powershell
-npm.cmd --prefix .\source\native-v4.5-lite\tauri-app ci
-npm.cmd --prefix .\source\native-v4.5-lite\tauri-app run sidecar:check
-npm.cmd --prefix .\source\native-v4.5-lite\tauri-app run sidecar:build
-.\source\native-v4.5-lite\vendor\node\node.exe `
-  .\source\native-v4.5-lite\tauri-app\scripts\stage.ts
-cargo test --locked --manifest-path `
-  .\source\native-v4.5-lite\tauri-app\Cargo.toml
+npm.cmd --prefix .\tauri-app ci
+npm.cmd --prefix .\tauri-app run sidecar:check
+npm.cmd --prefix .\tauri-app run sidecar:build
+node --test --test-concurrency=1 .\test\*.test.mjs
+cargo test --locked --manifest-path .\tauri-app\Cargo.toml
+node .\boot-smoke.js
+node .\gui-smoke.js
+node .\update-smoke.js
+node .\tauri-shell\make-portable.mjs
 ```
 
 ## 可复现性边界
