@@ -58,7 +58,9 @@ test('vendored 来源和本地安全补丁有可复核摘要', () => {
   assert.equal(vendor.tag, 'v2.1.0');
   assert.equal(vendor.commit, '2ccd12ff807c3bc983defd2177e15be1a416106f');
   assert.equal(vendor.upstreamClientSha256, '22ea2dff2002dfd012d54aec8fd3c91d1d62544d5f54c10de755bdb05fc20f78');
+  assert.equal(vendor.vendoredClientSha256Encoding, 'UTF-8 with LF line endings');
   assert.equal(sha256(Buffer.from(client)), vendor.vendoredClientSha256);
+  assert.match(read('.gitattributes'), /^assets\/plugins\/dsh-composer-dynamic-island\/lib\/client\.js text eol=lf$/m);
   assert.ok(vendor.localPatches.length >= 5);
 });
 
