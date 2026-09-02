@@ -51,8 +51,8 @@ pub fn show(parent_hwnd: isize, spec: &DialogSpec) -> DialogResult {
 fn show_message_box(spec: &DialogSpec) -> DialogResult {
     use windows::core::HSTRING;
     use windows::Win32::UI::WindowsAndMessaging::{
-        MessageBoxW, MB_DEFBUTTON1, MB_DEFBUTTON2, MB_ICONERROR, MB_ICONINFORMATION,
-        MB_ICONWARNING, MB_OK, MB_YESNO, IDYES,
+        MessageBoxW, IDYES, MB_DEFBUTTON1, MB_DEFBUTTON2, MB_ICONERROR, MB_ICONINFORMATION,
+        MB_ICONWARNING, MB_OK, MB_YESNO,
     };
     let icon = match spec.icon {
         DialogIcon::Error => MB_ICONERROR,
@@ -68,9 +68,12 @@ fn show_message_box(spec: &DialogSpec) -> DialogResult {
                 "{}\n\n{}\n\n「是」= {}；「否」= {}",
                 spec.message, spec.detail, spec.buttons[1], spec.buttons[0]
             )),
-            icon
-                | MB_YESNO
-                | if spec.default_index == 1 { MB_DEFBUTTON2 } else { MB_DEFBUTTON1 },
+            icon | MB_YESNO
+                | if spec.default_index == 1 {
+                    MB_DEFBUTTON2
+                } else {
+                    MB_DEFBUTTON1
+                },
         )
     } else {
         (
@@ -99,7 +102,11 @@ fn show_message_box(spec: &DialogSpec) -> DialogResult {
 #[cfg(not(windows))]
 pub fn show(_parent_hwnd: isize, spec: &DialogSpec) -> DialogResult {
     eprintln!("[dialog] {} — {}", spec.title, spec.message);
-    DialogResult { index: spec.default_index, cancel: false, checked: false }
+    DialogResult {
+        index: spec.default_index,
+        cancel: false,
+        checked: false,
+    }
 }
 
 /// buildErrorDetail 移植：错误 + 日志位置，同时是「复制日志」的剪贴板内容。

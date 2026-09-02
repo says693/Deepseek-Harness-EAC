@@ -227,11 +227,17 @@ function esc(s: unknown): string {
   return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
 }
 
+function displayVersion(value: unknown): string {
+  const version = String(value == null ? '' : value).trim();
+  if (!version) return '';
+  return /^v/i.test(version) ? version : `v${version}`;
+}
+
 function renderMenu() {
   if (!menuEl) return;
   menuEl.innerHTML = `
     <div class="dch-mh">
-      <div class="dch-mh-title">Deepseek Harness EAC <span style="font-weight:400;color:var(--dsw-alias-label-tertiary)">封装 v${esc(state.appVersion)}</span></div>
+      <div class="dch-mh-title">DSHEAC AIO <span style="font-weight:400;color:var(--dsw-alias-label-tertiary)">All-in-One ${esc(state.appVersion)}</span></div>
       <div class="dch-mh-sub"><span>agent v${esc(state.agentVersion)}</span><span>${esc(state.agentSource)}</span></div>
     </div>
     <button class="dch-item" data-act="toggle-shortcut-policy"><span>桌面快捷方式自动维护</span>${state.shortcutPolicy !== 'never' ? '<span class="dch-check">✓</span>' : ''}</button>
@@ -314,7 +320,7 @@ function injectChrome() {
   bar.innerHTML = `
     <div class="dch-left" data-tauri-drag-region="true">
       <img class="dch-icon" alt="" draggable="false" data-tauri-drag-region="true" />
-      <span class="dch-title" data-tauri-drag-region="true">Deepseek Harness EAC</span>
+      <span class="dch-title" data-tauri-drag-region="true">DSHEAC AIO</span>
       <span class="dch-badge" hidden data-tauri-drag-region="true"></span>
     </div>
     <div class="dch-right">
@@ -349,7 +355,7 @@ function injectChrome() {
     if (!info) return;
     state = { ...state, ...info };
     if (info.appVersion) {
-      badge.textContent = 'v' + info.appVersion;
+      badge.textContent = displayVersion(info.appVersion);
       badge.hidden = false;
     }
     if (info.agentVersion) badge.title = 'agent v' + info.agentVersion + '（' + info.agentSource + '）';

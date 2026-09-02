@@ -30,7 +30,8 @@ pub fn compute_backoff(failures: u32) -> u64 {
     let jitter_seed = (std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
-        .subsec_nanos() % 100) as u64;
+        .subsec_nanos()
+        % 100) as u64;
     let jitter = cap * (15 + jitter_seed * 20 / 99) / 100;
     cap + jitter
 }
@@ -108,7 +109,10 @@ pub struct Recovery {
 
 impl Recovery {
     pub fn new() -> Recovery {
-        Recovery { inner: Mutex::new(Inner::default()), active: AtomicBool::new(true) }
+        Recovery {
+            inner: Mutex::new(Inner::default()),
+            active: AtomicBool::new(true),
+        }
     }
 
     pub fn note_heartbeat(&self) {
@@ -247,9 +251,17 @@ mod tests {
         assert_eq!(compute_backoff(0), FIRST_DELAY_MS);
         assert_eq!(compute_backoff(1), FIRST_DELAY_MS);
         let d2 = compute_backoff(2);
-        assert!(d2 >= BACKOFF_BASE_MS * 2 && d2 <= BACKOFF_BASE_MS * 270 / 100, "d2={}", d2);
+        assert!(
+            d2 >= BACKOFF_BASE_MS * 2 && d2 <= BACKOFF_BASE_MS * 270 / 100,
+            "d2={}",
+            d2
+        );
         let d5 = compute_backoff(5);
-        assert!(d5 >= BACKOFF_MAX_MS && d5 <= BACKOFF_MAX_MS * 135 / 100, "d5={}", d5);
+        assert!(
+            d5 >= BACKOFF_MAX_MS && d5 <= BACKOFF_MAX_MS * 135 / 100,
+            "d5={}",
+            d5
+        );
     }
 
     #[test]

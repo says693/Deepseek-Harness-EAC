@@ -1,0 +1,69 @@
+status-rotator:
+  config:
+    intervalMs: 10000
+    typeSpeedMs: 30
+    longAfterMs: 60000
+    reloadIntervalMs: 15000
+    liveTickMs: 1000
+    debug: false
+    gradient:
+      enabled: true
+      colors:
+        - '#5fd4ff'
+        - '#a78bfa'
+      speed: 4
+    title:
+      enabled: false
+      templates:
+        - ⏳ {phaseLabel} {elapsed}
+      idleTemplate: 💤 dsh 空闲
+      intervalMs: 8000
+    pill:
+      enabled: false
+      template: '{model} · {phaseLabel} · {elapsed}'
+      position: right-bottom
+      opacity: 0.92
+    danmaku:
+      enabled: false
+      intervalMs: 5000
+      speedMs: 18000
+      fontSizeMin: 14
+      fontSizeMax: 20
+      rainbow: false
+      colors:
+        - '#5fd4ff'
+      color: '#ffffff'
+      opacity: 0.25
+      maxCount: 4
+      zIndex: -1
+      scope: all
+      marginTop: 16
+      marginBottom: 160
+  phrases:
+    zh:
+      thinking:
+        - 正在分析问题…
+        - 正在整理上下文…
+        - 正在执行任务…
+      tool:
+        - 正在调用工具…
+      compact:
+        - 正在压缩上下文…
+      default:
+        - 正在处理…
+    en:
+      thinking:
+        - Analyzing the request…
+        - Organizing context…
+        - Working on the task…
+      tool:
+        - Running a tool…
+      compact:
+        - Compacting context…
+      default:
+        - Working…
+webui-modules:
+  rewind: false
+  updater: false
+  modelSeats: false
+  peakValley: false

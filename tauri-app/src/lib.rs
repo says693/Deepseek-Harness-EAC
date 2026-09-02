@@ -9,7 +9,6 @@ pub mod logging;
 pub mod netprobe;
 pub mod paths;
 pub mod port;
-pub mod preview;
 pub mod procwin;
 pub mod recovery;
 pub mod service;
@@ -24,6 +23,8 @@ use state::AppState;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
+
+pub const DISPLAY_RELEASE: &str = "v1";
 
 pub fn run() {
     let app = tauri::Builder::default()
@@ -70,8 +71,18 @@ pub fn run() {
                 .path()
                 .app_data_dir()
                 .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default());
-            let paths = paths::Paths::new(cfg!(debug_assertions) == false, resource_dir, app_data, version);
+            let paths = paths::Paths::new(
+                cfg!(debug_assertions) == false,
+                resource_dir,
+                app_data,
+                version,
+            );
             let log = std::sync::Arc::new(logging::Logger::open(&paths.logs_dir));
+            match paths.seed_distribution_profile() {
+                Ok(true) => log.log("boot", "已植入发行包内的插件与技能快照"),
+                Ok(false) => {}
+                Err(e) => log.log("boot", &format!("插件与技能快照植入失败: {e}")),
+            }
             let state = Arc::new(AppState::new(paths, log));
             let _ = state.app.set(app.handle().clone());
             app.manage(state.clone());
@@ -91,17 +102,13 @@ pub fn run() {
                 }
             }
 
-            // 预览静态服务：独立端口只读文件服务（站内 HTML 预览 iframe 用）。
-            preview::start(state.log.clone());
-            state
-                .preview_port
-                .store(preview::PREVIEW_PORT.load(Ordering::SeqCst), Ordering::SeqCst);
-
             // 恢复状态机周期体检：心跳丢失 / 服务探活失败 → 退避恢复。
             {
                 let st = state.clone();
                 std::thread::spawn(move || loop {
-                    std::thread::sleep(std::time::Duration::from_millis(recovery::CHECK_INTERVAL_MS));
+                    std::thread::sleep(std::time::Duration::from_millis(
+                        recovery::CHECK_INTERVAL_MS,
+                    ));
                     recovery_tick(&st);
                 });
             }
@@ -209,7 +216,9 @@ fn close_flow(state: &Arc<AppState>, app: Option<AppHandle>, _win_label: &str) {
     state.log.log("boot", "close-flow: 进入");
     let doc = settings::load_at(&state.paths.settings_file());
     let action = settings::exit_action_of(&doc);
-    state.log.log("boot", &format!("close-flow: exitAction={}", action));
+    state
+        .log
+        .log("boot", &format!("close-flow: exitAction={}", action));
     match action.as_str() {
         "quit" => {
             if let Some(app) = app {
@@ -244,7 +253,10 @@ fn close_flow(state: &Arc<AppState>, app: Option<AppHandle>, _win_label: &str) {
                 );
                 st.log.log(
                     "boot",
-                    &format!("close-flow: 对话框返回 index={} checked={}", r.index, r.checked),
+                    &format!(
+                        "close-flow: 对话框返回 index={} checked={}",
+                        r.index, r.checked
+                    ),
                 );
                 if r.index == usize::MAX || r.cancel {
                     return; // 无法取消（cancellable=false），此分支仅防御
@@ -291,7 +303,7 @@ fn tray_hint_once(state: &Arc<AppState>) {
     }
     let _ = state.notify(
         "boot",
-        "Deepseek Harness EAC 仍在运行",
+        "DSHEAC AIO 仍在运行",
         "窗口已隐藏到系统托盘，点击托盘图标可重新打开。",
     );
 }
@@ -313,7 +325,7 @@ fn create_tray(app: AppHandle, state: &Arc<AppState>) {
     let st = state.clone();
     let tray = TrayIconBuilder::with_id("main-tray")
         .icon(icon)
-        .tooltip("Deepseek Harness EAC v4Lite")
+        .tooltip("DSHEAC AIO v1")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(move |app, event| {
@@ -335,7 +347,11 @@ fn create_tray(app: AppHandle, state: &Arc<AppState>) {
             }
         })
         .on_tray_icon_event(|tray, event| {
-            if let tauri::tray::TrayIconEvent::Click { button: tauri::tray::MouseButton::Left, button_state: tauri::tray::MouseButtonState::Up, .. } = event
+            if let tauri::tray::TrayIconEvent::Click {
+                button: tauri::tray::MouseButton::Left,
+                button_state: tauri::tray::MouseButtonState::Up,
+                ..
+            } = event
             {
                 let app = tray.app_handle().clone();
                 // 左键点击：可见则隐藏，隐藏则显示（Electron 版语义）。
@@ -378,7 +394,9 @@ fn recovery_tick(state: &Arc<AppState>) {
     if state.quitting.load(Ordering::SeqCst) {
         return;
     }
-    let Some(app) = state.app_handle() else { return };
+    let Some(app) = state.app_handle() else {
+        return;
+    };
     // 服务探活（expecting_web 期间）：probe 失败视作加载失败。
     let web_url = state.web_url.lock().unwrap().clone();
     if let Some(url) = web_url {
@@ -403,7 +421,11 @@ fn apply_recovery_action(state: &Arc<AppState>, app: &AppHandle, action: recover
     use recovery::RecoveryAction::*;
     state.log.log(
         "recovery",
-        &format!("触发恢复动作: {:?}（failures={}）", action, state.recovery.state_of().failures),
+        &format!(
+            "触发恢复动作: {:?}（failures={}）",
+            action,
+            state.recovery.state_of().failures
+        ),
     );
     match action {
         Reload => {

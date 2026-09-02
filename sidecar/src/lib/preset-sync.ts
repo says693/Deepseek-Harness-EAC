@@ -8,6 +8,17 @@ import path from 'node:path';
 
 type LogFn = (m: string) => void;
 
+function copyTree(src: string, dest: string): void {
+  fs.mkdirSync(dest, { recursive: true });
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    const source = path.join(src, entry.name);
+    const destination = path.join(dest, entry.name);
+    if (entry.isDirectory()) copyTree(source, destination);
+    else if (entry.isSymbolicLink()) copyTree(fs.realpathSync(source), destination);
+    else if (entry.isFile()) fs.copyFileSync(source, destination);
+  }
+}
+
 export interface SyncPresetsResult {
   installed: string[];
   kept: string[];
@@ -33,7 +44,7 @@ export function syncBundledPresets(assetsRoot: string, presetsRoot: string, log:
       const sharedDest = path.join(presetsRoot, entry.name);
       if (fs.existsSync(sharedDest)) continue;
       try {
-        fs.cpSync(src, sharedDest, { recursive: true });
+        copyTree(src, sharedDest);
         log('installed bundled preset shared dir: ' + entry.name);
       } catch (err) {
         log('failed to install bundled preset shared dir ' + entry.name + ': ' + (err instanceof Error ? err.message : String(err)));
@@ -49,7 +60,7 @@ export function syncBundledPresets(assetsRoot: string, presetsRoot: string, log:
       continue;
     }
     try {
-      fs.cpSync(src, dest, { recursive: true });
+      copyTree(src, dest);
       installed.push(entry.name);
       log('installed bundled agent preset: ' + entry.name);
     } catch (err) {

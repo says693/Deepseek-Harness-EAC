@@ -1,0 +1,92 @@
+# DSHEAC AIO v1 — Code and Release Audit
+
+日期：2026-09-01
+
+范围：Tauri 2/Rust 壳、Node sidecar、NSIS、构建/验证脚本、profile seed 与发布资源。
+
+## 已确认并修复
+
+### 1. staging 在当前中文路径崩溃
+
+原 `fs.cpSync(..., recursive: true)` 在工作区路径下以 Windows 异常 `0xC0000409` 终止，无 JavaScript 异常可捕获。改为显式递归复制后，完整 staging 成功。
+
+基线实测：
+
+- staging：50.2 秒；
+- 发布树裁剪：6797 个 `.map`/`.pdb` 文件与 2 个 ARM64 目录；
+- 未压缩体积减少：73.1 MiB；
+- 裁剪后 staging：app 225.3 MiB、Node 85.7 MiB、npm 11.5 MiB。
+
+该数字不是最终安装包或安装耗时收益，仍需打包 A/B 验证。
+
+### 2. 壳层绝对路径静态预览服务
+
+原 Tauri 壳在随机回环端口提供任意绝对文件路径读取，无允许根目录和访问令牌；`staticPort` 没有确认到实际消费方。已停用该壳层服务，保留 `dsh-better-sidebar` 自己的受控预览 API。
+
+### 3. 回环端口身份混淆
+
+原服务启动逻辑允许任意本机 HTTP `<500` 响应独立触发 `ReadyProbe`，随后把该端口写入 `state.web_url` 并作为 IPC 可信 origin。已改为：
+
+- 只有刚启动子进程 stdout 中的 ready URL 能建立候选 origin；
+- HTTP 只用于后续可用性复核；
+- 在 ready URL 出现前，仅允许内置 `tauri.localhost` 页面导航；
+- 主要 IPC 全部执行 main 窗口 + 当前受信 origin 检查。
+
+### 4. 外链命令拼接
+
+原实现拼接 PowerShell `Start-Process` 脚本。已改为严格解析 `http/https` URL，拒绝 userinfo 和内部 Tauri URL，并以参数方式传给 `explorer.exe`。
+
+### 5. 发布测试与产物新鲜度
+
+原构建排除 Tauri 安装器、manifest 和 sidecar RPC 测试，可能让失配测试长期失效。现改为 sidecar 编译后串行运行全部重构版 JS 测试，并执行锁定 Rust 测试；构建前清空 `dist`，检查 installer 时间，哈希清单排除自身并立即复核。
+
+### 6. 安装验证不足
+
+原验证无卸载、残留、Unicode 路径、绝对 deadline、失败报告与端口进程归属检查；还会在原 v4Lite 未运行时误报失败。现已补齐这些场景，并验证 NSIS 异步自删除完成后安装根、进程和端口均无残留。
+
+### 7. Profile seed 本机路径与个人化设置
+
+已删除 `.modules.yaml`、`.pnpm-workspace-state-v1.json`、`.pnpm/lock.yaml` 等会记录 `H:/CODEX`、原 Windows 用户目录、pnpm store 和 `.dsh-v4lite` 的机器状态；个人化 status-rotator 文案已替换为中性公共默认值。`Set-PublicSeed` 现在会执行全树路径扫描，命中则阻断构建。
+
+## AIO v1 命名与版本
+
+- 版型：AIO（All-in-One）
+- 用户可见版本：v1
+- 机器内部 SemVer：1.0.0
+- 上游 `v4.5-lite` 只作为源码溯源，不是当前产品版本。
+
+## 仍未完全解决
+
+### 高优先级
+
+1. **插件更新真实性**：npm/GitHub 下载尚无应用级签名清单或固定内容摘要；自动更新应保持默认关闭。
+2. **第三方许可证**：插件、皮肤、素材和二进制尚未完成逐项 SBOM/notice；这是公开发布阻塞项。
+3. **代码签名**：安装包未签名，SmartScreen 和发布者身份验证未解决。
+4. **CSP/全局 Tauri API**：`csp: null`、`withGlobalTauri: true` 仍扩大 XSS 影响，需先做 DSH Web 兼容性测试再收紧。
+
+### 中优先级
+
+1. WebView2 离线安装器增加体积，但为离线/无预装目标机提供确定性，暂不移除。
+2. profile seed 文件数较多，首次 seed 与杀毒扫描可能仍是首启瓶颈；归档 seed 可进一步优化，但需新增原子解包、版本迁移与失败回滚。
+3. 预置根 `node_modules`、vendor Node/npm 和 profile seed 尚无完整输入哈希 manifest。
+4. NSIS 进程结束失败后仍可能继续覆盖；应增加最终探测并在同产品进程仍存活时中止安装。
+
+## 验收标准
+
+本机最终技术验证结果：JavaScript 275/275、Rust 12/12，安装/首启/共存/卸载 E2E 已 PASS。该结论不替代第三方授权、代码签名或商标审查。
+
+发布前必须看到：
+
+- 全部 JS 测试通过；
+- `cargo test --locked` 通过；
+- Tauri/NSIS 构建成功；
+- `Verify-Installer.ps1` PASS；
+- 安装目录、进程和端口无残留；
+- 原 v4Lite（若运行）未被中断；
+- `SHA256SUMS.txt` 复核通过；
+- 第三方 license/notice 门禁完成；
+- 安装包签名策略明确。
+
+## 结论边界
+
+静态审计和本机测试只能证明已覆盖场景。不能据此绝对保证所有 Windows 环境、杀毒软件、企业代理、权限策略和损坏磁盘上都能安装。最终发布结论应表述为“在记录的环境和验收矩阵中通过”，而不是无条件保证。

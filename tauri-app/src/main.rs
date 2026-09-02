@@ -5,7 +5,7 @@
 
 fn main() {
     if std::env::args().any(|a| a.starts_with("--dsh-watchdog")) {
-        dsh_desktop_lib::watchdog::run_as_watchdog();
+        dsh_desktop_aio_lib::watchdog::run_as_watchdog();
     }
-    dsh_desktop_lib::run();
+    dsh_desktop_aio_lib::run();
 }

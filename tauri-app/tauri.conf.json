@@ -1,9 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Deepseek Harness EAC v4Lite",
-  "mainBinaryName": "Deepseek Harness EAC v4Lite",
-  "version": "4.5.0",
-  "identifier": "com.deepseek.dsh.desktop.lite",
+  "productName": "DSHEAC AIO",
+  "mainBinaryName": "DSHEAC AIO",
+  "version": "1.0.0",
+  "identifier": "com.deepseek.dsh.desktop.aio",
   "build": {
     "beforeDevCommand": "npm run build:inject",
     "devUrl": null,
@@ -25,7 +25,7 @@
     "resources": ["resources/**/*"],
     "windows": {
       "webviewInstallMode": {
-        "type": "downloadBootstrapper"
+        "type": "offlineInstaller"
       },
       "nsis": {
         "installerHooks": "./nsis/installer-hooks.nsh",

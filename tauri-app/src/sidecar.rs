@@ -46,7 +46,11 @@ impl Sidecar {
     pub fn spawn(paths: &Paths, log: &Logger) -> Result<(Sidecar, Receiver<SidecarEvent>), String> {
         // V-T：sidecar 源码已 TypeScript 化，运行入口为编译产物
         // <appRoot>/sidecar/dist/shell-host.js（dev=仓库根、打包=resources/app 下同布局）。
-        let host = paths.app_root.join("sidecar").join("dist").join("shell-host.js");
+        let host = paths
+            .app_root
+            .join("sidecar")
+            .join("dist")
+            .join("shell-host.js");
         if !host.exists() {
             return Err(format!("找不到 shell-host.js: {}", host.display()));
         }
@@ -72,7 +76,9 @@ impl Sidecar {
             use std::os::windows::process::CommandExt;
             cmd.creation_flags(0x0800_0000);
         }
-        let mut child = cmd.spawn().map_err(|e| format!("启动 shell-host 失败: {}", e))?;
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| format!("启动 shell-host 失败: {}", e))?;
         let stdin = child.stdin.take().ok_or("sidecar stdin 不可用")?;
         let stdout = child.stdout.take().ok_or("sidecar stdout 不可用")?;
 
@@ -94,7 +100,9 @@ impl Sidecar {
             let reader = BufReader::new(stdout);
             for line in reader.lines() {
                 let Ok(line) = line else { break };
-                let Ok(msg) = serde_json::from_str::<Value>(&line) else { continue };
+                let Ok(msg) = serde_json::from_str::<Value>(&line) else {
+                    continue;
+                };
                 if let Some(id) = msg.get("id").and_then(|v| v.as_u64()) {
                     let resp = if msg.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
                         Ok(msg.get("result").cloned().unwrap_or(Value::Null))
@@ -113,14 +121,23 @@ impl Sidecar {
                     match ev {
                         "log" => {
                             let _ = events_tx.send(SidecarEvent::Log(
-                                msg.get("tag").and_then(|v| v.as_str()).unwrap_or("sidecar").into(),
+                                msg.get("tag")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("sidecar")
+                                    .into(),
                                 msg.get("msg").and_then(|v| v.as_str()).unwrap_or("").into(),
                             ));
                         }
                         "notify" => {
                             let _ = events_tx.send(SidecarEvent::Notify(
-                                msg.get("title").and_then(|v| v.as_str()).unwrap_or("").into(),
-                                msg.get("body").and_then(|v| v.as_str()).unwrap_or("").into(),
+                                msg.get("title")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .into(),
+                                msg.get("body")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .into(),
                             ));
                         }
                         "balance" => {
@@ -142,7 +159,10 @@ impl Sidecar {
             let _ = events_tx.send(SidecarEvent::Exited);
         });
 
-        log.log("boot", &format!("shell-host sidecar 已启动 (pid={:?})", sidecar.pid()));
+        log.log(
+            "boot",
+            &format!("shell-host sidecar 已启动 (pid={:?})", sidecar.pid()),
+        );
         Ok((sidecar, events_rx))
     }
 
@@ -162,7 +182,12 @@ impl Sidecar {
         self.call_timeout(method, params, Duration::from_secs(300))
     }
 
-    pub fn call_timeout(&self, method: &str, params: Value, timeout: Duration) -> Result<Value, String> {
+    pub fn call_timeout(
+        &self,
+        method: &str,
+        params: Value,
+        timeout: Duration,
+    ) -> Result<Value, String> {
         if !self.is_alive() {
             return Err("sidecar 未运行".into());
         }
@@ -175,7 +200,9 @@ impl Sidecar {
         {
             let mut guard = self.inner.writer.lock().unwrap();
             match guard.as_mut() {
-                Some(w) => w.write_all(line.as_bytes()).map_err(|e| format!("sidecar 写入失败: {}", e))?,
+                Some(w) => w
+                    .write_all(line.as_bytes())
+                    .map_err(|e| format!("sidecar 写入失败: {}", e))?,
                 None => return Err("sidecar 管道已关闭".into()),
             }
         }
@@ -183,7 +210,11 @@ impl Sidecar {
             Ok(resp) => resp,
             Err(_) => {
                 self.inner.pending.lock().unwrap().remove(&id);
-                Err(format!("sidecar 调用超时: {}（{} 秒）", method, timeout.as_secs()))
+                Err(format!(
+                    "sidecar 调用超时: {}（{} 秒）",
+                    method,
+                    timeout.as_secs()
+                ))
             }
         }
     }

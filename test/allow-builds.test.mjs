@@ -2,15 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 // 防呆（v4.2，用户反馈问题 2）：pnpm v10+ 默认封锁依赖构建脚本
 // （prepare/install/postinstall），git 源插件安装必被拦：
 //   dsh plugin add github:X 失败 → 只打印 "allowBuilds 加白名单" 提示。
 // 本测试覆盖 pnpm 封锁提示的多形态解析与 pnpm-workspace.yaml 的行级编辑。
 
-const mod = await import(pathToFileURL(join('assets', 'plugins', 'dsh-webui-market', 'lib', 'allow-builds.mjs')).href);
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const mod = await import(pathToFileURL(join(root, 'assets', 'plugins', 'dsh-webui-market', 'lib', 'allow-builds.mjs')).href);
 const { parseBlockedBuildKeys, readAllowBuilds, ensureAllowBuilds } = mod;
 
 function tmp() {

@@ -52,9 +52,7 @@ fn taskkill(pid: u32, force: bool) {
         args.push("/F".to_string());
     }
     let mut cmd = Command::new("taskkill");
-    cmd.args(&args)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+    cmd.args(&args).stdout(Stdio::null()).stderr(Stdio::null());
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -181,7 +179,11 @@ pub fn process_in_any_job(_pid: u32) -> bool {
 }
 
 /// 分离启动（看门狗/重启客户端）：不随父进程退出而被杀。
-pub fn spawn_detached(exe: &str, args: &[String], cwd: Option<&std::path::Path>) -> std::io::Result<()> {
+pub fn spawn_detached(
+    exe: &str,
+    args: &[String],
+    cwd: Option<&std::path::Path>,
+) -> std::io::Result<()> {
     let mut cmd = Command::new(exe);
     cmd.args(args)
         .current_dir(cwd.unwrap_or_else(|| std::path::Path::new(".")))

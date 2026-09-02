@@ -1,0 +1,67 @@
+name: AIO validation
+
+on:
+  pull_request:
+    branches: [aio-v1]
+    paths:
+      - '.agents/skills/**'
+      - '.github/workflows/aio-validate.yml'
+      - 'assets/**'
+      - 'distribution/**'
+      - 'sidecar/**'
+      - 'tauri-app/**'
+      - 'tauri-shell/**'
+      - 'test/**'
+      - '*.js'
+      - '*.json'
+      - '*.md'
+      - '*.yml'
+
+jobs:
+  test-aio:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install Tauri toolchain
+        run: npm --prefix tauri-app ci
+
+      - name: Check and compile sidecar
+        run: |
+          npm --prefix tauri-app run sidecar:check
+          npm --prefix tauri-app run sidecar:build
+
+      - name: Scan public seed
+        run: npm run seed:sanitize
+
+      - name: Run JavaScript tests
+        shell: powershell
+        run: |
+          $tests = Get-ChildItem test -Filter '*.test.mjs' -File | Select-Object -ExpandProperty FullName
+          node --test --test-concurrency=1 $tests
+
+      - name: Run Rust tests
+        run: cargo test --locked --manifest-path tauri-app/Cargo.toml
+
+      - name: Validate project Skill
+        shell: powershell
+        run: |
+          & .\.agents\skills\deepseek-harness-eac-dev\scripts\validate-skill.ps1 `
+            -SkillPath .\.agents\skills\deepseek-harness-eac-dev `
+            -RepoPath .
+
+      - name: Check diff whitespace
+        shell: powershell
+        run: git diff --check ${{ github.event.pull_request.base.sha }}...HEAD

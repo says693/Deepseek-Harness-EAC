@@ -27,7 +27,7 @@ pub fn create_main_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         "main",
         WebviewUrl::App(std::path::PathBuf::from("loading.html")),
     )
-    .title("Deepseek Harness EAC")
+    .title("DSHEAC AIO")
     .inner_size(1400.0, 900.0)
     .min_inner_size(960.0, 640.0)
     .visible(true)
@@ -37,56 +37,53 @@ pub fn create_main_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         builder = builder.initialization_script(script);
     }
     builder = builder
-    .on_navigation(move |url| {
-        // H1 修复语义：origin 精确比较（host+port）；异域 http(s) 一律拦截
-        // 并转系统浏览器；本地应用页与内部 scheme 放行。
-        let scheme = url.scheme();
-        if scheme == "http" || scheme == "https" {
-            let web = state.web_url.lock().unwrap().clone();
-            let allowed = match &web {
-                Some(w) => same_origin(url.as_str(), w),
-                None => {
-                    let host = url.host_str().unwrap_or("");
-                    // 第 10 个真机 bug：Tauri v2 Windows 的内部页 origin 是
-                    // http(s)://tauri.localhost（host 字面量带 "tauri." 前缀），
-                    // 不在 127.0.0.1/localhost 白名单内 —— 启动早期 web_url
-                    // 尚为 None 时，loading.html 首导航被判异域并转系统浏览器
-                    // （用户看到莫名打开 tauri.localhost/loading.html 标签）。
-                    // localhost 是保留域，外部站点不可能落在其子域下，放行安全。
-                    host == "127.0.0.1" || host == "localhost" || host == "tauri.localhost"
+        .on_navigation(move |url| {
+            // H1 修复语义：origin 精确比较（host+port）；异域 http(s) 一律拦截
+            // 并转系统浏览器；本地应用页与内部 scheme 放行。
+            let scheme = url.scheme();
+            if scheme == "http" || scheme == "https" {
+                let web = state.web_url.lock().unwrap().clone();
+                let allowed = match &web {
+                    Some(w) => same_origin(url.as_str(), w),
+                    None => {
+                        let host = url.host_str().unwrap_or("");
+                        // Before the child process emits its ready URL, only the
+                        // built-in Tauri page is trusted. Arbitrary loopback
+                        // origins must not gain a navigation/capability window.
+                        host == "tauri.localhost"
+                    }
+                };
+                if allowed {
+                    return true;
                 }
-            };
-            if allowed {
-                return true;
+                let target = url.to_string();
+                std::thread::spawn(move || {
+                    crate::ipc::open_url_external(&target);
+                });
+                return false;
             }
-            let target = url.to_string();
-            std::thread::spawn(move || {
-                crate::ipc::open_url_external(&target);
-            });
-            return false;
-        }
-        true
-    })
-    .on_page_load(move |win, payload| {
-        use tauri::webview::PageLoadEvent::*;
-        let state = &state_for_load;
-        if matches!(payload.event(), Finished) {
-            if let Ok(u) = win.url() {
-                let is_web = state
-                    .web_url
-                    .lock()
-                    .unwrap()
-                    .as_ref()
-                    .map(|w| same_origin(u.as_str(), w))
-                    .unwrap_or(false);
-                if is_web {
-                    state.recovery.note_web_loaded();
-                } else {
-                    state.recovery.note_local_page();
+            true
+        })
+        .on_page_load(move |win, payload| {
+            use tauri::webview::PageLoadEvent::*;
+            let state = &state_for_load;
+            if matches!(payload.event(), Finished) {
+                if let Ok(u) = win.url() {
+                    let is_web = state
+                        .web_url
+                        .lock()
+                        .unwrap()
+                        .as_ref()
+                        .map(|w| same_origin(u.as_str(), w))
+                        .unwrap_or(false);
+                    if is_web {
+                        state.recovery.note_web_loaded();
+                    } else {
+                        state.recovery.note_local_page();
+                    }
                 }
             }
-        }
-    });
+        });
     builder.build()
 }
 
@@ -96,7 +93,11 @@ pub fn same_origin(a: &str, b: &str) -> bool {
     fn authority(s: &str) -> Option<String> {
         let (scheme, rest) = s.split_once("://")?;
         let auth = rest.split(['/', '?', '#']).next()?;
-        let default_port = if scheme.eq_ignore_ascii_case("https") { "443" } else { "80" };
+        let default_port = if scheme.eq_ignore_ascii_case("https") {
+            "443"
+        } else {
+            "80"
+        };
         // 去 userinfo
         let auth = auth.rsplit('@').next().unwrap_or(auth);
         // IPv6 [..]:port
@@ -123,7 +124,10 @@ pub fn navigate_main_to_web(app: &AppHandle, state: &AppState) {
     let url = state.web_url.lock().unwrap().clone();
     let Some(url) = url else { return };
     if let Some(win) = app.get_webview_window("main") {
-        let js = format!("window.location.replace({});", serde_json::to_string(&url).unwrap_or_default());
+        let js = format!(
+            "window.location.replace({});",
+            serde_json::to_string(&url).unwrap_or_default()
+        );
         let _ = win.eval(&js);
         let _ = win.show();
         let _ = win.set_focus();
@@ -176,7 +180,9 @@ pub fn start_and_show(state: &Arc<AppState>, overlays: &[String]) -> Result<Stri
     crate::service::wait_until_up(port, Duration::from_secs(120))?;
     *state.web_url.lock().unwrap() = Some(outcome.url.clone());
     *state.service.lock().unwrap() = Some(outcome.handle.clone());
-    state.log.log("boot", &format!("Web UI 就绪: {}", outcome.url));
+    state
+        .log
+        .log("boot", &format!("Web UI 就绪: {}", outcome.url));
     // startAndShow 的「show」半边：导航主窗到 Web UI 并显示。
     // （移植缺失导致窗口停留在隐藏的 about:blank —— 真机验证发现。）
     if let Some(app) = state.app_handle() {
@@ -186,22 +192,20 @@ pub fn start_and_show(state: &Arc<AppState>, overlays: &[String]) -> Result<Stri
     {
         let st = state.clone();
         let handle = outcome.handle.clone();
-        std::thread::spawn(move || {
-            loop {
-                match rx.recv() {
-                    Ok(ServiceEvent::Exited(code, signal)) => {
-                        if handle.intentional.load(Ordering::SeqCst)
-                            || st.quitting.load(Ordering::SeqCst)
-                            || !handle.was_ready.load(Ordering::SeqCst)
-                        {
-                            return;
-                        }
-                        on_service_died(&st, code, &signal);
+        std::thread::spawn(move || loop {
+            match rx.recv() {
+                Ok(ServiceEvent::Exited(code, signal)) => {
+                    if handle.intentional.load(Ordering::SeqCst)
+                        || st.quitting.load(Ordering::SeqCst)
+                        || !handle.was_ready.load(Ordering::SeqCst)
+                    {
                         return;
                     }
-                    Ok(_) => {}
-                    Err(_) => return,
+                    on_service_died(&st, code, &signal);
+                    return;
                 }
+                Ok(_) => {}
+                Err(_) => return,
             }
         });
     }
@@ -283,7 +287,9 @@ pub fn guarded_start(state: &Arc<AppState>) -> Result<String, String> {
             Ok(url)
         }
         Err(first_err) => {
-            state.log.log("guard", "守护启动：首次拉起失败，进入体检修复流程");
+            state
+                .log
+                .log("guard", "守护启动：首次拉起失败，进入体检修复流程");
             let findings = sc.call("guard.healthCheck", json!({})).unwrap_or(json!({}));
             if let Some(list) = findings.get("findings").and_then(|f| f.as_array()) {
                 for f in list {
@@ -301,13 +307,20 @@ pub fn guarded_start(state: &Arc<AppState>) -> Result<String, String> {
             let fixable = findings
                 .get("findings")
                 .and_then(|f| f.as_array())
-                .map(|a| a.iter().filter(|f| f.get("fixable").and_then(|v| v.as_bool()).unwrap_or(false)).count())
+                .map(|a| {
+                    a.iter()
+                        .filter(|f| f.get("fixable").and_then(|v| v.as_bool()).unwrap_or(false))
+                        .count()
+                })
                 .unwrap_or(0);
             // V4.2：pnpm allowBuilds 配置级修复钩子（只调用一次）。
             let mut pre_applied: Vec<String> = Vec::new();
             if let Ok(r) = sc.call("guard.allowBuildsPreRetry", json!({"errText": first_err})) {
                 if let Some(arr) = r.get("applied").and_then(|v| v.as_array()) {
-                    pre_applied = arr.iter().filter_map(|x| x.as_str().map(String::from)).collect();
+                    pre_applied = arr
+                        .iter()
+                        .filter_map(|x| x.as_str().map(String::from))
+                        .collect();
                 } else if !r.get("applied").is_none() {
                     pre_applied.push("配置级修复钩子已应用".into());
                 }
@@ -321,7 +334,9 @@ pub fn guarded_start(state: &Arc<AppState>) -> Result<String, String> {
                 }
                 all.extend(pre_applied);
                 if !all.is_empty() {
-                    state.log.log("guard", &format!("已应用修复: {}", all.join("；")));
+                    state
+                        .log
+                        .log("guard", &format!("已应用修复: {}", all.join("；")));
                     match start_and_show(state, &[]) {
                         Ok(url) => {
                             if let Some(meta) = snap.filter(|m| m.get("id").is_some()) {
@@ -348,9 +363,16 @@ pub fn guarded_start(state: &Arc<AppState>) -> Result<String, String> {
     }
 }
 
-fn rollback_path(state: &Arc<AppState>, err: &str, boot_snap: Option<&Value>) -> Result<String, String> {
+fn rollback_path(
+    state: &Arc<AppState>,
+    err: &str,
+    boot_snap: Option<&Value>,
+) -> Result<String, String> {
     let sc = state.sidecar()?;
-    let good = sc.call("guard.lastGood", json!({})).ok().filter(|m| m.get("id").is_some());
+    let good = sc
+        .call("guard.lastGood", json!({}))
+        .ok()
+        .filter(|m| m.get("id").is_some());
     let different = match (&good, boot_snap) {
         (Some(g), Some(b)) => g["id"] != b["id"],
         (Some(_), None) => true,
@@ -432,8 +454,14 @@ pub fn restart_service_core(state: &Arc<AppState>) -> Value {
         // 等旧进程真正退出（DLL 文件锁释放），给市场排队任务一个无锁窗口。
         wait_service_gone(state, Duration::from_secs(20));
         let sc = state.sidecar()?;
-        if let Err(e) = sc.call_timeout("market.processPending", json!({}), Duration::from_secs(15 * 60)) {
-            state.log.log("market-pending", &format!("排队任务执行失败: {}", e));
+        if let Err(e) = sc.call_timeout(
+            "market.processPending",
+            json!({}),
+            Duration::from_secs(15 * 60),
+        ) {
+            state
+                .log
+                .log("market-pending", &format!("排队任务执行失败: {}", e));
         }
         // pnpm 重写 node_modules 后：重建配套插件副本 + 清理遮蔽（顺序不能反）。
         if let Err(e) = sc.call("profile.syncAll", json!({})) {
@@ -444,7 +472,9 @@ pub fn restart_service_core(state: &Arc<AppState>) -> Value {
     state.restarting.store(false, Ordering::SeqCst);
     match result {
         Ok(url) => {
-            state.log.log("service", &format!("dsh web 服务已重启: {}", url));
+            state
+                .log
+                .log("service", &format!("dsh web 服务已重启: {}", url));
             json!({"ok": true, "url": url})
         }
         Err(e) => {
@@ -485,7 +515,9 @@ pub type DialogAction = Arc<dyn Fn(&Arc<AppState>, usize, bool) + Send + Sync>;
 /// 必须走主线程：TSF 注入物（WeType/CrashRpt）的窗口 hook 会在后台线程
 /// 创建模态框时触发 AV（bug #11）。
 pub fn show_dialog_on_main(state: &Arc<AppState>, spec: DialogSpec, action: DialogAction) {
-    let Some(app) = state.app_handle() else { return };
+    let Some(app) = state.app_handle() else {
+        return;
+    };
     let st = state.clone();
     let _ = app.run_on_main_thread(move || {
         let r = crate::dialog::show(0, &spec);
@@ -554,10 +586,16 @@ fn run_plugin_update_check(state: &Arc<AppState>, manual: bool) {
         Ok(s) => s,
         Err(_) => return,
     };
-    let r = match sc.call_timeout("updates.check", json!({"manual": manual}), Duration::from_secs(30 * 60)) {
+    let r = match sc.call_timeout(
+        "updates.check",
+        json!({"manual": manual}),
+        Duration::from_secs(30 * 60),
+    ) {
         Ok(v) => v,
         Err(e) => {
-            state.log.log("plugin-update", &format!("内置插件更新检查失败: {}", e));
+            state
+                .log
+                .log("plugin-update", &format!("内置插件更新检查失败: {}", e));
             return;
         }
     };
@@ -594,14 +632,22 @@ fn run_plugin_update_check(state: &Arc<AppState>, manual: bool) {
         let failed: Vec<String> = r
             .get("failed")
             .and_then(|v| v.as_array())
-            .map(|a| a.iter().filter_map(|x| x.get("name").and_then(|n| n.as_str()).map(String::from)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.get("name").and_then(|n| n.as_str()).map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
         let detail = format!(
             "更新已写入用户目录，重启 Web 服务后生效（无需重启应用）。{}",
             if failed.is_empty() {
                 String::new()
             } else {
-                format!("\n\n失败 {} 个：{}（可在「设置 → 插件 → 更新」重试）", failed.len(), failed.join("、"))
+                format!(
+                    "\n\n失败 {} 个：{}（可在「设置 → 插件 → 更新」重试）",
+                    failed.len(),
+                    failed.join("、")
+                )
             }
         );
         show_dialog_on_main(
@@ -659,10 +705,15 @@ pub fn handle_boot_failure(state: &Arc<AppState>, err: &str) {
         let rows = sc.call("plugin.list", json!({})).ok()?;
         rows.as_array()?
             .iter()
-            .find(|r| r.get("id").and_then(|v| v.as_str()) == b.get("rowId").and_then(|v| v.as_str()))
+            .find(|r| {
+                r.get("id").and_then(|v| v.as_str()) == b.get("rowId").and_then(|v| v.as_str())
+            })
             .cloned()
     });
-    let last_good = sc.call("guard.lastGood", json!({})).ok().filter(|m| m.get("id").is_some());
+    let last_good = sc
+        .call("guard.lastGood", json!({}))
+        .ok()
+        .filter(|m| m.get("id").is_some());
     let prev = sc
         .call("updater.previousAgentInfo", json!({}))
         .ok()
@@ -670,12 +721,20 @@ pub fn handle_boot_failure(state: &Arc<AppState>, err: &str) {
 
     let toggleable = blame_row
         .as_ref()
-        .map(|r| r.get("toggleable").and_then(|v| v.as_bool()).unwrap_or(false))
+        .map(|r| {
+            r.get("toggleable")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+        })
         .unwrap_or(false);
     let blame_name = blame_row
         .as_ref()
         .and_then(|r| r.get("name").and_then(|v| v.as_str()))
-        .or_else(|| blame.as_ref().and_then(|b| b.get("name").and_then(|v| v.as_str())))
+        .or_else(|| {
+            blame
+                .as_ref()
+                .and_then(|b| b.get("name").and_then(|v| v.as_str()))
+        })
         .unwrap_or("")
         .to_string();
     let btn_disable = if toggleable {
@@ -683,7 +742,9 @@ pub fn handle_boot_failure(state: &Arc<AppState>, err: &str) {
     } else {
         None
     };
-    let btn_rollback = last_good.as_ref().map(|_| "回滚到最后良好快照并重试".to_string());
+    let btn_rollback = last_good
+        .as_ref()
+        .map(|_| "回滚到最后良好快照并重试".to_string());
     let has_prev = prev.is_some();
 
     let mut buttons: Vec<String> = Vec::new();
@@ -713,7 +774,10 @@ pub fn handle_boot_failure(state: &Arc<AppState>, err: &str) {
         idx_quit = buttons.len() - 1;
     }
     let idx_disable: Option<usize> = btn_disable.as_ref().map(|_| 0);
-    let idx_rollback: Option<usize> = btn_rollback.as_ref().map(|_| if idx_disable.is_some() { 1 } else { 0 });
+    let idx_rollback: Option<usize> =
+        btn_rollback
+            .as_ref()
+            .map(|_| if idx_disable.is_some() { 1 } else { 0 });
 
     let mut detail_lines = vec![err.to_string()];
     if blame.is_some() {
@@ -721,10 +785,16 @@ pub fn handle_boot_failure(state: &Arc<AppState>, err: &str) {
         detail_lines.push(format!(
             "报错指向插件「{}」（{}），可先停用该插件后重试。",
             blame_name,
-            match blame.as_ref().and_then(|b| b.get("kind").and_then(|v| v.as_str())) {
+            match blame
+                .as_ref()
+                .and_then(|b| b.get("kind").and_then(|v| v.as_str()))
+            {
                 Some("patchRow") => format!(
                     "patch 行 {}",
-                    blame.as_ref().and_then(|b| b.get("rowId").and_then(|v| v.as_str())).unwrap_or("")
+                    blame
+                        .as_ref()
+                        .and_then(|b| b.get("rowId").and_then(|v| v.as_str()))
+                        .unwrap_or("")
                 ),
                 k => k.unwrap_or("").to_string(),
             }
@@ -779,8 +849,10 @@ pub fn handle_boot_failure(state: &Arc<AppState>, err: &str) {
                 if let Some(row) = &blame_row {
                     if let Some(id) = row.get("id").and_then(|v| v.as_str()) {
                         if let Ok(sc2) = st.sidecar() {
-                            let _ = sc2.call("plugin.setEnabled", json!({"id": id, "enabled": false}));
-                            st.log.log("plugin-manager", &format!("启动失败后停用插件: {}", id));
+                            let _ =
+                                sc2.call("plugin.setEnabled", json!({"id": id, "enabled": false}));
+                            st.log
+                                .log("plugin-manager", &format!("启动失败后停用插件: {}", id));
                         }
                     }
                 }
@@ -899,9 +971,10 @@ fn sweep_orphaned_runtime(state: &Arc<AppState>) {
         use std::os::windows::process::CommandExt;
         sweep.creation_flags(0x0800_0000);
     }
-    let Ok(out) = sweep.output()
-    else {
-        state.log.log("boot", "孤儿清扫: PowerShell 探测不可用，跳过");
+    let Ok(out) = sweep.output() else {
+        state
+            .log
+            .log("boot", "孤儿清扫: PowerShell 探测不可用，跳过");
         return;
     };
     if !out.status.success() {
@@ -917,7 +990,8 @@ fn sweep_orphaned_runtime(state: &Arc<AppState>) {
         let Some((pid_s, ppid_s)) = line.trim().split_once('\t') else {
             continue;
         };
-        let (Ok(pid), Ok(ppid)) = (pid_s.trim().parse::<u32>(), ppid_s.trim().parse::<u32>()) else {
+        let (Ok(pid), Ok(ppid)) = (pid_s.trim().parse::<u32>(), ppid_s.trim().parse::<u32>())
+        else {
             continue;
         };
         if pid == std::process::id() || ppid == std::process::id() {
@@ -927,9 +1001,13 @@ fn sweep_orphaned_runtime(state: &Arc<AppState>) {
         if crate::procwin::alive(ppid) {
             continue;
         }
-        state
-            .log
-            .log("boot", &format!("发现上一实例残留的运行时进程 pid={}（父 {} 已退出），回收", pid, ppid));
+        state.log.log(
+            "boot",
+            &format!(
+                "发现上一实例残留的运行时进程 pid={}（父 {} 已退出），回收",
+                pid, ppid
+            ),
+        );
         crate::procwin::kill_pid_tree_and_wait(
             pid,
             Duration::from_millis(crate::procwin::GRACE_MS),
@@ -938,7 +1016,9 @@ fn sweep_orphaned_runtime(state: &Arc<AppState>) {
         swept += 1;
     }
     if swept > 0 {
-        state.log.log("boot", &format!("孤儿清扫完成，回收 {} 个残留进程", swept));
+        state
+            .log
+            .log("boot", &format!("孤儿清扫完成，回收 {} 个残留进程", swept));
     }
 }
 
@@ -957,8 +1037,8 @@ fn boot_chain(state: &Arc<AppState>) {
     state.log.log(
         "boot",
         &format!(
-            "Deepseek Harness EAC（封装 {}）  userData={}  dshHome={}  agent={}({})",
-            paths.version,
+            "DSHEAC AIO {}  userData={}  dshHome={}  agent={}({})",
+            crate::DISPLAY_RELEASE,
             paths.user_data.display(),
             paths.dsh_home.display(),
             av,
@@ -969,8 +1049,14 @@ fn boot_chain(state: &Arc<AppState>) {
     // 看门狗 + 运行状态标记（安装版）：意外崩溃后自动拉起并告知用户。
     // 先读上次运行状态（write_run_state 会覆盖 pid/cleanExit，必须先读），
     // 据此决定是否清扫孤儿进程。
-    let unclean_prev = crate::watchdog::detect_unclean_previous_run(&paths.run_state_file(), std::process::id());
-    crate::watchdog::write_run_state(&paths.run_state_file(), std::process::id(), &paths.version, None);
+    let unclean_prev =
+        crate::watchdog::detect_unclean_previous_run(&paths.run_state_file(), std::process::id());
+    crate::watchdog::write_run_state(
+        &paths.run_state_file(),
+        std::process::id(),
+        &paths.version,
+        None,
+    );
     start_watchdog(state);
     if let Some(prev) = &unclean_prev {
         let started = prev
@@ -981,8 +1067,11 @@ fn boot_chain(state: &Arc<AppState>) {
         let started = &started[..started.len().min(19)];
         let _ = state.notify(
             "crash",
-            "Deepseek Harness EAC 已自动恢复",
-            &format!("检测到应用在 {} 前后未正常退出，看门狗已重新启动应用。", started),
+            "DSHEAC AIO 已自动恢复",
+            &format!(
+                "检测到应用在 {} 前后未正常退出，看门狗已重新启动应用。",
+                started
+            ),
         );
     }
 
@@ -1025,8 +1114,14 @@ fn boot_chain(state: &Arc<AppState>) {
     };
 
     // 一次性迁移 + 配套插件同步 + 模块遮蔽清理（幂等，sidecar 内实现）。
-    if let Err(e) = sc.call_timeout("profile.migrateAndSync", json!({}), Duration::from_secs(10 * 60)) {
-        state.log.log("boot", &format!("profile 迁移/同步失败: {}", e));
+    if let Err(e) = sc.call_timeout(
+        "profile.migrateAndSync",
+        json!({}),
+        Duration::from_secs(10 * 60),
+    ) {
+        state
+            .log
+            .log("boot", &format!("profile 迁移/同步失败: {}", e));
     }
 
     // koffi FFI 预检：失败则注入目录选择器降级 overlay（start_and_show 以
@@ -1039,9 +1134,18 @@ fn boot_chain(state: &Arc<AppState>) {
             } else if !ok {
                 *state.picker_overlay.lock().unwrap() = None;
             }
-            state.log.log("preflight", if ok { "koffi 预检: 通过" } else { "koffi 预检: 失败（已注入降级 overlay）" });
+            state.log.log(
+                "preflight",
+                if ok {
+                    "koffi 预检: 通过"
+                } else {
+                    "koffi 预检: 失败（已注入降级 overlay）"
+                },
+            );
         }
-        Err(e) => state.log.log("preflight", &format!("koffi 预检执行失败（忽略）: {}", e)),
+        Err(e) => state
+            .log
+            .log("preflight", &format!("koffi 预检执行失败（忽略）: {}", e)),
     }
 
     // junction 归属守卫：首次纠偏 + 周期巡检（5 分钟）都放后台线程，
@@ -1086,14 +1190,23 @@ fn junction_tick(state: &AppState) {
     let Ok(r) = sc.call_timeout("guard.junctionTick", json!({}), Duration::from_secs(120)) else {
         return;
     };
-    if r.get("externalRunning").and_then(|v| v.as_bool()).unwrap_or(false) {
-        state.log.log("guard", "共享模块被外部 dsh 接管，待其退出后自动修复");
+    if r.get("externalRunning")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        state
+            .log
+            .log("guard", "共享模块被外部 dsh 接管，待其退出后自动修复");
         return;
     }
     let repaired: Vec<String> = r
         .get("repaired")
         .and_then(|v| v.as_array())
-        .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
     if !repaired.is_empty() && !state.junction_notified.swap(true, Ordering::SeqCst) {
         let _ = state.notify(
@@ -1128,13 +1241,21 @@ fn verify_bundled_modules(state: &Arc<AppState>) -> bool {
             return true;
         }
     }
-    let r = crate::integrity::verify_bundle(&state.paths.app_root.join("node_modules"), Some(&manifest));
+    let r = crate::integrity::verify_bundle(
+        &state.paths.app_root.join("node_modules"),
+        Some(&manifest),
+    );
     if r.skipped || r.ok {
         // 校验通过才写缓存；受损或跳过不写，下次仍会重检。
         let _ = std::fs::write(&cache_path, serde_json::json!({ "hash": hash }).to_string());
         return true;
     }
-    let sample: Vec<String> = r.damaged.iter().take(5).map(|d| format!("{}（{}）", d.name, d.reason)).collect();
+    let sample: Vec<String> = r
+        .damaged
+        .iter()
+        .take(5)
+        .map(|d| format!("{}（{}）", d.name, d.reason))
+        .collect();
     state.log.log(
         "boot",
         &format!(
@@ -1181,13 +1302,18 @@ fn start_watchdog(state: &AppState) {
     if !state.paths.packaged {
         return;
     }
-    let Ok(exe) = std::env::current_exe() else { return };
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
     let args = vec![
         "--dsh-watchdog=1".to_string(),
         format!("--pid={}", std::process::id()),
         format!("--exe={}", exe.to_string_lossy()),
         format!("--state={}", state.paths.run_state_file().display()),
-        format!("--log={}", state.paths.logs_dir.join("watchdog.log").display()),
+        format!(
+            "--log={}",
+            state.paths.logs_dir.join("watchdog.log").display()
+        ),
     ];
     let cwd = exe.parent().map(|p| p.to_path_buf());
     match crate::procwin::spawn_detached(&exe.to_string_lossy(), &args, cwd.as_deref()) {

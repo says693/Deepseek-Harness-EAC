@@ -30,10 +30,9 @@ pub fn parse_ready_url(line: &str) -> Option<String> {
 
 #[derive(Debug)]
 pub enum ServiceEvent {
-    /// stdout 就绪行命中。
+    /// stdout 就绪行命中。只有刚启动的子进程能产生该事件；HTTP 探测
+    /// 仅用于随后确认可访问性，不能独立建立可信 origin。
     ReadyLine(String),
-    /// HTTP 探测命中。
-    ReadyProbe(u16),
     /// 子进程退出（code, signal）。
     Exited(Option<i32>, String),
     /// 启动超时（秒）。
@@ -155,7 +154,9 @@ pub fn start_server(
             node_bin, bin, web_port, profile
         ),
     );
-    let mut child = cmd.spawn().map_err(|e| format!("启动 dsh web 失败: {}", e))?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("启动 dsh web 失败: {}", e))?;
     let pid = child.id();
 
     #[cfg(windows)]
@@ -251,20 +252,6 @@ pub fn start_server(
         });
     }
 
-    // HTTP 探测线程（与 stdout 就绪行竞争，避免管道缓冲吞行导致假超时）。
-    if web_port > 0 && port::restricted_port_of(&format!("http://127.0.0.1:{}", web_port)) == 0 {
-        let events = events.clone();
-        std::thread::spawn(move || {
-            loop {
-                if crate::netprobe::probe_localhost(web_port, Duration::from_millis(2500)) {
-                    let _ = events.send(ServiceEvent::ReadyProbe(web_port));
-                    return;
-                }
-                std::thread::sleep(Duration::from_millis(350));
-            }
-        });
-    }
-
     // 退出监视线程。
     {
         let events = events.clone();
@@ -301,14 +288,12 @@ pub fn start_server(
             Ok(ev) => ev,
             Err(_) => return Err("dsh web 事件通道关闭".into()),
         };
-        // ReadyProbe 不带 URL，用请求端口拼（chooseStableWebPort 已避开受限表）。
         let url = match &ev {
             ServiceEvent::ReadyLine(u) => Some(u.clone()),
-            ServiceEvent::ReadyProbe(p) => Some(format!("http://127.0.0.1:{}", p)),
             _ => None,
         };
         match ev {
-            ServiceEvent::ReadyLine(_) | ServiceEvent::ReadyProbe(_) => {
+            ServiceEvent::ReadyLine(_) => {
                 let url = url.unwrap_or_else(|| format!("http://127.0.0.1:{}", web_port));
                 let blocked = port::restricted_port_of(&url);
                 if blocked > 0 && unsafe_retries > 0 {
@@ -322,23 +307,32 @@ pub fn start_server(
                     handle.intentional.store(true, Ordering::SeqCst);
                     kill_handle(&handle);
                     std::thread::sleep(Duration::from_millis(600));
-                    return start_server(paths, log, overlays, unsafe_retries - 1, events, receiver);
+                    return start_server(
+                        paths,
+                        log,
+                        overlays,
+                        unsafe_retries - 1,
+                        events,
+                        receiver,
+                    );
                 }
                 // 稳定端口：dsh 实际监听端口与请求不同（极端兜底）时以实际为准。
                 let actual = port::extract_port(&url);
                 if web_port > 0 && actual > 0 && actual != web_port {
-                    let _ = settings::set_key(&paths.settings_file(), "webPort", serde_json::json!(actual));
+                    let _ = settings::set_key(
+                        &paths.settings_file(),
+                        "webPort",
+                        serde_json::json!(actual),
+                    );
                 }
                 handle.was_ready.store(true, Ordering::SeqCst);
-                return Ok((
-                    StartOutcome { url, handle },
-                    receiver,
-                ));
+                return Ok((StartOutcome { url, handle }, receiver));
             }
             ServiceEvent::Exited(code, _) => {
                 return Err(format!(
                     "dsh web 启动失败（退出码 {}）。日志: {}",
-                    code.map(|c| c.to_string()).unwrap_or_else(|| "signal".into()),
+                    code.map(|c| c.to_string())
+                        .unwrap_or_else(|| "signal".into()),
                     paths.logs_dir.join("dsh-web.log").display()
                 ));
             }
@@ -392,7 +386,10 @@ mod tests {
             parse_ready_url("2026/08/21 12:00:00 dsh web: http://127.0.0.1:18080 ready"),
             Some("http://127.0.0.1:18080".to_string())
         );
-        assert_eq!(parse_ready_url("dsh web:   https://127.0.0.1:443/x"), Some("https://127.0.0.1:443/x".to_string()));
+        assert_eq!(
+            parse_ready_url("dsh web:   https://127.0.0.1:443/x"),
+            Some("https://127.0.0.1:443/x".to_string())
+        );
         assert_eq!(parse_ready_url("no url here"), None);
         assert_eq!(parse_ready_url("dsh web: not-a-url"), None);
     }

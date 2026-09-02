@@ -59,7 +59,7 @@ const IS_WIN = process.platform === 'win32';
 // v4Lite 独立数据主目录：绝不触碰原版 EAC / dsh CLI 的 ~\.dsh —— 两端同时
 // 运行（各自向 web profile 同步内置插件、写 cordis.patch.yml）会互相踩踏。
 // 显式设置环境变量 DSH_HOME 可覆盖此默认（尊重用户的强制指定）。
-const DEFAULT_DSH_HOME = path.join(os.homedir(), '.dsh-v4lite');
+const DEFAULT_DSH_HOME = path.join(os.homedir(), '.dsh-aio');
 
 // ---------------------------------------------------------------------------
 // State
@@ -2688,9 +2688,9 @@ function maintainShortcuts() {
     const ico = shortcutIconPath();
     const opts = {
       target,
-      description: 'DeepSeek Harness 桌面客户端（v4Lite）',
+      description: 'DSHEAC AIO v1 桌面客户端',
       ...(ico ? { icon: ico, iconIndex: 0 } : {}),
-      appUserModelId: 'com.deepseek.dsh.desktop.lite',
+      appUserModelId: 'com.deepseek.dsh.desktop.aio',
     };
     let changed = false;
     // 清理旧名称（DSH Desktop）快捷方式：改名后它们指向的 exe 已不存在。
@@ -3142,7 +3142,7 @@ const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  app.setAppUserModelId('com.deepseek.dsh.desktop.lite');
+  app.setAppUserModelId('com.deepseek.dsh.desktop.aio');
   app.on('second-instance', () => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();

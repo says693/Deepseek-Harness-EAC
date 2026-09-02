@@ -1,17 +1,17 @@
 [package]
-name = "dsh-desktop-lite"
-version = "4.5.0"
-description = "Deepseek Harness EAC v4Lite — Tauri shell around the dsh web UI"
+name = "dsh-desktop-aio"
+version = "1.0.0"
+description = "DSHEAC AIO - All-in-One Tauri shell around the dsh web UI"
 edition = "2021"
 rust-version = "1.77"
 
 # 源码同时作为 lib（tauri 命令注册需要）与 bin（入口 + 看门狗再入）。
 [lib]
-name = "dsh_desktop_lib"
+name = "dsh_desktop_aio_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
-name = "dsh-desktop-lite"
+name = "dsh-desktop-aio"
 path = "src/main.rs"
 
 [build-dependencies]
@@ -24,7 +24,6 @@ tauri-plugin-notification = "2"
 tauri-plugin-clipboard-manager = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tiny_http = "0.12"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [
