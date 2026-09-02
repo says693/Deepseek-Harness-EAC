@@ -14,45 +14,49 @@
 
 | 文件 | 大小 | SHA-256 |
 | --- | ---: | --- |
-| `DSHEAC-AIO-v1-Setup-x64.exe` | 350,624,914 bytes | `56b3227fa7de97baccbcdca2fe6047ae1f0d0d782081a919fa5ef22bcac4a43c` |
-| `DSHEAC-AIO-v1-Source.zip` | 212,179,779 bytes | `78fe7e753afffe9f9598765bc0ef8edcbd5ec590f99d6e0cf5765fba72578d9f` |
+| `DSHEAC-AIO-v1-Setup-x64.exe` | 348,573,428 bytes | `19077ca194129864c446959a272a0874b0f38f41f8a78fd1f10e58e364939e88` |
+| `DSHEAC-AIO-v1-Portable-x64.zip` | 152,056,743 bytes | `056aaf2eb0693de5647f45c850cdfeef098a4be79dd90bb0cfda8f64a92c8d5c` |
 
 ## 测试结果
 
-- JavaScript：275/275 PASS
-- Rust：12/12 PASS
+- JavaScript：282/282 PASS
+- Rust：15/15 PASS
 - sidecar RPC：PASS
 - NSIS 静态契约：PASS
-- staging bundle-manifest：437 个包，自检 PASS
+- staging bundle-manifest：435 个包，自检 PASS
+- 5.x/AIO 双布局 Skill validator：ready；script tests/official validator/PowerShell 5.1 PASS
+- boot、GUI、update smoke：PASS；GUI 截图已随分支提交
+- portable 真实启动与 `.dsh-aio-data` 隔离：PASS
 - profile seed 机器路径扫描：PASS
 - 安装 E2E：PASS
 
 最终 E2E 报告：
 
-`verification/verification-20260902-021235-780-6228-ce31f805.json`
+`verification/verification-20260902-103828-856-22996-7a30886d.json`（本机生成，不提交临时日志目录）
 
 ### E2E 指标
 
-- 静默安装：64.556 秒，退出码 0
+- 静默安装：48.126 秒，退出码 0
 - 安装路径：包含中文和空格
-- 安装 payload：19,317 文件，345,348,432 bytes
-- 首启至 HTTP 200：9.466 秒
-- HTTP 端口：14308
+- 安装 payload：19,298 文件，335,994,154 bytes
+- 首启至 HTTP 200：13.992 秒
+- HTTP 端口：5290
 - 监听 PID 属于本轮应用进程树：是
 - profile 必需插件/技能缺失：0
 - 私密设置标记：0
 - 本机 pnpm 元数据残留：0
-- 静默卸载完整清理：51.432 秒，退出码 0
+- 静默卸载完整清理：78.997 秒，退出码 0
 - 安装目录残留：无
 - AIO 进程残留：无
 - 监听端口残留：无
 - 外部隔离用户数据：按默认策略保留
+- 卸载注册表：仅 `DSHEAC AIO`，InstallLocation 指向本轮 AIO 安装根；卸载后无注册表残留
 
 ## 安装与首启优化
 
-- staging 从早期 225.3 MiB 降至 140.4 MiB；
-- 复制时过滤 17,931 个非运行时文件和 20 个重复/异构目录；
-- 未压缩资源减少约 104.2 MiB；
+- staging 从早期 225.3 MiB 降至 131.5 MiB；
+- 复制时过滤 17,926 个非运行时文件和 20 个重复/异构目录；
+- 未压缩资源减少约 104.1 MiB；
 - 过滤 source map、PDB、TypeScript 声明、ARM64 预编译件；
 - OpenTelemetry 仅保留 Node 实际使用的 CommonJS `build/src`，去除重复 `build/esm` / `build/esnext`；
 - 最长 staging 路径降至 259 字符；
@@ -67,7 +71,9 @@
 - 外链使用参数化 `explorer.exe`，不拼接 PowerShell/cmd；
 - profile seed 删除 `.modules.yaml`、`.pnpm-workspace-state-v1.json`、`.pnpm/lock.yaml`；
 - 个人化 status rotator 文案替换为中性公共默认值；
-- 构建时全树扫描原工作区、用户目录、`.dsh-v4lite` 和 pnpm store 痕迹。
+- 构建时全树扫描原工作区、用户目录、`.dsh-v4lite` 和 pnpm store 痕迹；
+- AIO identifier、进程名、快捷方式 TargetPath、安装数据、DSH_HOME、portable data、NSIS 和卸载注册表均与其他版本隔离；
+- legacy localStorage 导入默认关闭，仅在 `DSH_AIO_IMPORT_LEGACY=1` 时显式启用。
 
 ## 仍未闭合的公开发布风险
 
